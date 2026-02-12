@@ -842,6 +842,9 @@ local ConfigFolder = "UHub_Configs"
 
 
 
+local HttpService = game:GetService("HttpService")
+local ConfigFolder = "UHub_Configs"
+
 if not isfolder(ConfigFolder) then makefolder(ConfigFolder) end
 
 local function GetConfigList()

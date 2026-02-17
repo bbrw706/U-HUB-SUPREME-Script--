@@ -20,10 +20,13 @@ local Locations = {
     ["zone 3"] = Vector3.new(399.71, -2.51, 118.11),
     ["zone 4"] = Vector3.new(540.42, -2.51, 15.88),
     ["zone 5"] = Vector3.new(756.99, -2.51, 2.76),
-    ["zome 6"] = Vector3.new(1074.24, -2.51, -10.50),
+    ["zone 6"] = Vector3.new(1074.24, -2.51, -10.50),
     ["zone 7"] = Vector3.new(1553.90, -2.51, -106.57),
     ["zone 8"] = Vector3.new(2245.50, -2.51, -19.42),
-    ["zone 9"] = Vector3.new(2600.67, -2.51, -14.11)
+    ["zone 9"] = Vector3.new(2600.67, -2.51, -14.11),
+    ["zone 10"] = Vector3.new(3339.000, -2.51, -129.404),
+    ["zone 11"] = Vector3.new(3693.999, -2.51, -129.393),
+    ["zone 12"] = Vector3.new(4048.976, -2.51, -129.403),
 }
 
 local ZoneData = {
@@ -35,7 +38,10 @@ local ZoneData = {
     [6] = {Farm = Vector3.new(1266.16, 3.49, 4.94),  Safe = Locations["zone 6"]},
     [7] = {Farm = Vector3.new(1788.45, 3.49, -0.41), Safe = Locations["zone 7"]},
     [8] = {Farm = Vector3.new(2426.10, 3.49, -7.20), Safe = Locations["zone 8"]},
-    [9] = {Farm = Vector3.new(2782.53, 3.49, -9.53), Safe = Locations["zone 9"]}
+    [9] = {Farm = Vector3.new(2984.003, 3.49, -129.281), Safe = Locations["zone 9"]},
+    [10] = {Farm = Vector3.new(3339.000, 3.49, -129.404), Safe = Locations["zone 10"]},
+    [11] = {Farm = Vector3.new(3693.999, 3.49, -129.393), Safe = Locations["zone 11"]},
+    [12] = {Farm = Vector3.new(4048.976, 3.49, -129.403), Safe = Locations["zone 12"]},
 }
 
 
@@ -220,7 +226,7 @@ SurvivalSection:AddToggle("GodNeanToggle", {
 -- [[ 4. UI COMPONENTS (HOME) ]]
 Tabs.Main:AddDropdown("ZoneSelector", {
     Title = "Zone Selector",
-    Values = {"zone 1", "zone 2", "zone 3", "zone 4", "zone 5", "zone 6", "zone 7", "zone 8", "zone 9"},
+    Values = {"zone 1", "zone 2", "zone 3", "zone 4", "zone 5", "zone 6", "zone 7", "zone 8", "zone 9", "zone 10", "zone 11", "zone 12"},
     Default = "zone 1",
     Callback = function(v) SelectedZoneID = tonumber(v:match("%d+")) end
 })
@@ -254,7 +260,7 @@ Tabs.Farm:AddToggle("TsunamiFly400", {
         _G.FlySequence = v
         if v then
             task.spawn(function()
-                local LocList = {Locations["zone 1"], Locations["zone 2"], Locations["zone 3"], Locations["zone 4"], Locations["zone 5"], Locations["zone 6"], Locations["zone 7"], Locations["zone 8"], Locations["zone 9"]}
+                local LocList = {Locations["zone 1"], Locations["zone 2"], Locations["zone 3"], Locations["zone 4"], Locations["zone 5"], Locations["zone 6"], Locations["zone 7"], Locations["zone 8"], Locations["zone 9"], Locations["zone 10"], Locations["zone 11"], Locations["zone 12"]}
                 while _G.FlySequence do
                     for _, pos in pairs(LocList) do
                         if not _G.FlySequence then break end
@@ -272,7 +278,7 @@ Tabs.Farm:AddToggle("TsunamiFly400", {
 
 local SelectPoint = Tabs.Farm:AddDropdown("WarpDropdown", {
     Title = "Warp to Selected Zone",
-    Values = {"Off","zone 1", "zone 2", "zone 3", "zone 4", "zone 5", "zone 6", "zone 7", "zone 8", "zone 9"},
+    Values = {"Off","zone 1", "zone 2", "zone 3", "zone 4", "zone 5", "zone 6", "zone 7", "zone 8", "zone 9", "zone 10", "zone 11", "zone 12"},
     Default = "Off",
 })
 
@@ -798,13 +804,16 @@ local P_Zone4 = CFrame.new(547.977722, -2.511581, -129.377441, 1,0,0,0,1,0,0,0,1
 local P_Zone5 = CFrame.new(761.993469, -2.511586, -129.503113, 1,0,0,0,1,0,0,0,1)
 local P_Zone6 = CFrame.new(1083.314575, -2.511588, -129.501953, 1,0,0,0,1,0,0,0,1)
 local P_Zone7 = CFrame.new(1573.947632, -2.511583, -129.509949, 1,0,0,0,1,0,0,0,1)
-local P_Zone8 = CFrame.new(2276.26221, -5.99998856, -126.776489, 1,0,0,0,1,0,0,0,1) -- Waypoint 3 Pos
-local P_Zone9 = CFrame.new(2632.862061, -2.511454, -129.501831, 1,0,0,0,1,0,0,0,1)
+local P_Zone8 = CFrame.new(2276.26221, -5.99998856, -126.776489, 1,0,0,0,1,0,0,0,1)
+local P_Zone9 = CFrame.new(2983.221923828125, -2.511432409286499, -128.1309814453125, 1,0,0,0,1,0,0,0,1)
+local P_Zone10 = CFrame.new(3337.914306640625, -2.511432409286499, -128.14913940429688, 1,0,0,0,1,0,0,0,1)
+local P_Zone11 = CFrame.new(3692.92041015625, -2.511432409286499, -128.25445556640625, 1,0,0,0,1,0,0,0,1)
+local P_Zone12 = CFrame.new(4048.327880859375, -2.511432409286499, -128.40335083007812, 1,0,0,0,1,0,0,0,1)
 
 -- [[ 4. UI Dropdown (2-in-1 Sequence) ]]
 local ZoneWarp = WarpTab:AddDropdown("ZoneWarpDropdown", {
     Title = "3-Step Flight (Rest-stop 1-2 -> Zone)",
-    Values = {"Off", "zone 1", "zone 2", "zone 3", "zone 4", "zone 5", "zone 6", "zone 7", "zone 8", "zone 9"},
+    Values = {"Off", "zone 1", "zone 2", "zone 3", "zone 4", "zone 5", "zone 6", "zone 7", "zone 8", "zone 9", "zone 10", "zone 11", "zone 12"},
     Multi = false,
     Default = "Off",
 })
@@ -820,7 +829,10 @@ ZoneWarp:OnChanged(function(Value)
     elseif Value == "zone 6" then target = P_Zone6
     elseif Value == "zone 7" then target = P_Zone7
     elseif Value == "zone 8" then target = P_Zone8
-    elseif Value == "zone 9" then target = P_Zone9 end
+    elseif Value == "zone 9" then target = P_Zone9
+    elseif Value == "zone 10" then target = P_Zone10
+    elseif Value == "zone 11" then target = P_Zone11
+    elseif Value == "zone 12" then target = P_Zone12 end
 
     if target then WarpTo(target) end
     ZoneWarp:SetValue("Off")
@@ -840,8 +852,26 @@ local Locations = {
     [11] = CFrame.new(3693.999, -2.511, -129.393), [12] = CFrame.new(4048.976, -2.511, -129.403)
 }
 
-local CurrentZone = 1
 local lp = game:GetService("Players").LocalPlayer
+
+-- [[ ฟังก์ชันใหม่: เช็คว่าเราอยู่ใกล้โซนไหนที่สุดตอนนี้ ]]
+local function getClosestZoneIndex()
+    local char = lp.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return 1 end
+
+    local closestDist = math.huge
+    local closestIndex = 1
+
+    for i = 1, #Locations do
+        local dist = (hrp.Position - Locations[i].Position).Magnitude
+        if dist < closestDist then
+            closestDist = dist
+            closestIndex = i
+        end
+    end
+    return closestIndex
+end
 
 -- Warp Function (Speed Safety Check)
 local function WarpTo(target)
@@ -878,7 +908,7 @@ Frame.CanvasSize = UDim2.new(0, 0, 0, 800)
 Frame.ScrollBarThickness = 13
 Frame.Active = true
 
--- [[ Advanced Draggable System (Smooth) ]]
+-- [[ Draggable System ]]
 local dragging, dragInput, dragStart, startPos
 local function update(input)
     local delta = input.Position - dragStart
@@ -907,7 +937,7 @@ layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local ZoneDisplay = Instance.new("TextLabel", Frame)
 ZoneDisplay.Size = UDim2.new(1, 0, 0, 50)
-ZoneDisplay.Text = "SELECTED: ZONE " .. CurrentZone
+ZoneDisplay.Text = "AUTO DETECTION ACTIVE"
 ZoneDisplay.TextColor3 = Color3.new(1, 1, 1)
 ZoneDisplay.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
 ZoneDisplay.Font = Enum.Font.Code
@@ -927,16 +957,23 @@ local function createBtn(parent, txt, bg, tc, func)
     return b
 end
 
+-- [[ แก้ไขปุ่มให้ทำงานตามตำแหน่งจริง ]]
 createBtn(Frame, "Next Zone", Color3.new(0.15, 0.15, 0.15), Color3.new(1, 1, 1), function()
-    CurrentZone = math.clamp(CurrentZone + 1, 1, 12)
-    ZoneDisplay.Text = "SELECTED: ZONE " .. CurrentZone
-    WarpTo(Locations[CurrentZone])
+    local current = getClosestZoneIndex()
+    local targetIdx = current + 1
+    if targetIdx > #Locations then targetIdx = 1 end -- วนกลับโซน 1
+    
+    ZoneDisplay.Text = "TARGET: ZONE " .. targetIdx
+    WarpTo(Locations[targetIdx])
 end)
 
 createBtn(Frame, "Previous Zone", Color3.new(0.15, 0.15, 0.15), Color3.new(1, 1, 1), function()
-    CurrentZone = math.clamp(CurrentZone - 1, 1, 12)
-    ZoneDisplay.Text = "SELECTED: ZONE " .. CurrentZone
-    WarpTo(Locations[CurrentZone])
+    local current = getClosestZoneIndex()
+    local targetIdx = current - 1
+    if targetIdx < 1 then targetIdx = #Locations end -- วนไปโซนสุดท้าย
+    
+    ZoneDisplay.Text = "TARGET: ZONE " .. targetIdx
+    WarpTo(Locations[targetIdx])
 end)
 
 local divider = Instance.new("TextLabel", Frame)
@@ -947,15 +984,12 @@ divider.BackgroundTransparency = 1
 
 for i = 1, 12 do
     createBtn(Frame, "FAST WARP: ZONE " .. i, Color3.new(0.05, 0.05, 0.05), Color3.new(1, 1, 1), function()
+        ZoneDisplay.Text = "WARPING TO ZONE " .. i
         WarpTo(StartPos)
         task.wait(0.2)
         WarpTo(Locations[i])
     end)
 end
-
--- [[ --------------------------------------------------------- ]]
--- [[ Part 2: Floating UI Toggle Switch ]]
--- [[ --------------------------------------------------------- ]]
 
 if WarpTab then
     WarpTab:AddToggle("ShowBlackUI", {
@@ -964,29 +998,26 @@ if WarpTab then
         Callback = function(Value)
             sg.Enabled = Value
             if Value then
-                Fluent:Notify({ Title = "U-HUB", Content = "Floating Navigation Active", Duration = 3 })
+                Fluent:Notify({ Title = "U-HUB", Content = "Smart Nav Active", Duration = 3 })
             end
         end
     })
-else
-    warn("WarpTab is nil! Please place this code at the bottom of your script.")
 end
 
--- [[ 5. Direct Zone Warp Buttons ]]
-local ZoneSection = WarpTab:AddSection("Express Warp (3-Step Sequence)")
+local ZoneSection = WarpTab:AddSection("Express Warp (Direct)")
 
-ZoneSection:AddButton({ Title = "Warp Zone 1", Callback = function() WarpTo(P_Zone1) end })
-ZoneSection:AddButton({ Title = "Warp Zone 2", Callback = function() WarpTo(P_Zone2) end })
-ZoneSection:AddButton({ Title = "Warp Zone 3", Callback = function() WarpTo(P_Zone3) end })
-ZoneSection:AddButton({ Title = "Warp Zone 4", Callback = function() WarpTo(P_Zone4) end })
-ZoneSection:AddButton({ Title = "Warp Zone 5", Callback = function() WarpTo(P_Zone5) end })
-ZoneSection:AddButton({ Title = "Warp Zone 6", Callback = function() WarpTo(P_Zone6) end })
-ZoneSection:AddButton({ Title = "Warp Zone 7", Callback = function() WarpTo(P_Zone7) end })
-ZoneSection:AddButton({ Title = "Warp Zone 8 (Pos 3)", Callback = function() WarpTo(P_Zone8) end })
-ZoneSection:AddButton({ Title = "Warp Zone 9", Callback = function() WarpTo(P_Zone9) end })
+for i = 1, 12 do
+    ZoneSection:AddButton({ 
+        Title = "Warp Zone " .. i, 
+        Callback = function() 
+            ZoneDisplay.Text = "DIRECT WARP: " .. i
+            WarpTo(Locations[i]) 
+        end 
+    })
+end
+
 local HttpService = game:GetService("HttpService")
 local ConfigFolder = "UHub_Configs"
-
 
 local HttpService = game:GetService("HttpService")
 local ConfigFolder = "UHub_Configs"

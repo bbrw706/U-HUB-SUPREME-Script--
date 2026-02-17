@@ -118,6 +118,7 @@ end
 -- [[ 7. สร้างปุ่มจริง ]]
 CreateBtn("🇹🇭 THAI VERSION", UDim2.fromScale(0.5, 0.35), function()
     loadstring(game:HttpGet("https://gist.githubusercontent.com/bbrw706/09f75480bbefbdd86afcef02b9364ad4/raw/a6d9223116e400a65e8d597449837e9e8e295057/gistfile1.txt"))()
+end) -- <--- ตรงนี้แหละคัฟที่หายไป! ต้องมี end) เพื่อปิดปุ่มภาษาไทย
 
 CreateBtn("🇺🇸 ENGLISH VERSION", UDim2.fromScale(0.5, 0.65), function()
     print("Loading English...")

@@ -117,8 +117,7 @@ end
 
 -- [[ 7. สร้างปุ่มจริง ]]
 CreateBtn("🇹🇭 THAI VERSION", UDim2.fromScale(0.5, 0.35), function()
-    loadstring(game:HttpGet("https://gist.githubusercontent.com/bbrw706/3e9adc01d07c955e2c93a09103a8d4d8/raw/c121f65a4de9f63543e5c4c3de10d1ecd9d6709a/gistfile1.txt"))()
-end)
+    loadstring(game:HttpGet("https://gist.githubusercontent.com/bbrw706/d1e783c9c03708f7c954d56164835d75/raw/ff6ff61c43aac8af3560940aecca236ab16fd486/gistfile1.txt"))()
 
 CreateBtn("🇺🇸 ENGLISH VERSION", UDim2.fromScale(0.5, 0.65), function()
     print("Loading English...")

@@ -23,8 +23,12 @@ local Locations = {
     ["จุดที่ 6"] = Vector3.new(1074.24, -2.51, -10.50),
     ["จุดที่ 7"] = Vector3.new(1553.90, -2.51, -106.57),
     ["จุดที่ 8"] = Vector3.new(2245.50, -2.51, -19.42),
-    ["จุดที่ 9"] = Vector3.new(2600.67, -2.51, -14.11)
+    ["จุดที่ 9"] = Vector3.new(2600.67, -2.51, -14.11),
+    ["จุดที่ 10"] = Vector3.new(3339.000, -2.51, -129.404),
+    ["จุดที่ 11"] = Vector3.new(3693.999, -2.51, -129.393),
+    ["จุดที่ 12"] = Vector3.new(4048.976, -2.51, -129.403),
 }
+
 
 local ZoneData = {
     [1] = {Farm = Vector3.new(229.04, 3.49, -18.49), Safe = Locations["จุดที่ 1"]},
@@ -35,7 +39,10 @@ local ZoneData = {
     [6] = {Farm = Vector3.new(1266.16, 3.49, 4.94),  Safe = Locations["จุดที่ 6"]},
     [7] = {Farm = Vector3.new(1788.45, 3.49, -0.41), Safe = Locations["จุดที่ 7"]},
     [8] = {Farm = Vector3.new(2426.10, 3.49, -7.20), Safe = Locations["จุดที่ 8"]},
-    [9] = {Farm = Vector3.new(2782.53, 3.49, -9.53), Safe = Locations["จุดที่ 9"]}
+    [9] = {Farm = Vector3.new(2984.003, 3.49, -129.281), Safe = Locations["จุดที่ 9"]},
+    [10] = {Farm = Vector3.new(3339.000, 3.49, -129.404), Safe = Locations["จุดที่ 10"]},
+    [11] = {Farm = Vector3.new(3693.999, 3.49, -129.393), Safe = Locations["จุดที่ 11"]},
+    [12] = {Farm = Vector3.new(4048.976, 3.49, -129.403), Safe = Locations["จุดที่ 12"]},
 }
 
 
@@ -221,7 +228,7 @@ SurvivalSection:AddToggle("GodNeanToggle", {
 -- [[ 4. UI COMPONENTS (HOME) ]]
 Tabs.Main:AddDropdown("ZoneSelector", {
     Title = "เลือกโซนฟาร์ม",
-    Values = {"โซน 1", "โซน 2", "โซน 3", "โซน 4", "โซน 5", "โซน 6", "โซน 7", "โซน 8", "โซน 9"},
+    Values = {"โซน 1", "โซน 2", "โซน 3", "โซน 4", "โซน 5", "โซน 6", "โซน 7", "โซน 8", "โซน 9", "โซน 10", "โซน 11", "โซน 12"},
     Default = "โซน 1",
     Callback = function(v) SelectedZoneID = tonumber(v:match("%d+")) end
 })
@@ -255,7 +262,7 @@ Tabs.Farm:AddToggle("TsunamiFly400", {
         _G.FlySequence = v
         if v then
             task.spawn(function()
-                local LocList = {Locations["จุดที่ 1"], Locations["จุดที่ 2"], Locations["จุดที่ 3"], Locations["จุดที่ 4"], Locations["จุดที่ 5"], Locations["จุดที่ 6"], Locations["จุดที่ 7"], Locations["จุดที่ 8"], Locations["จุดที่ 9"]}
+                local LocList = {Locations["จุดที่ 1"], Locations["จุดที่ 2"], Locations["จุดที่ 3"], Locations["จุดที่ 4"], Locations["จุดที่ 5"], Locations["จุดที่ 6"], Locations["จุดที่ 7"], Locations["จุดที่ 8"], Locations["จุดที่ 9"], Locations["จุดที่ 10"], Locations["จุดที่ 11"], Locations["จุดที่ 12"]}
                 while _G.FlySequence do
                     for _, pos in pairs(LocList) do
                         if not _G.FlySequence then break end
@@ -273,7 +280,7 @@ Tabs.Farm:AddToggle("TsunamiFly400", {
 
 local SelectPoint = Tabs.Farm:AddDropdown("WarpDropdown", {
     Title = "วาร์ปไปจุดที่เลือก",
-    Values = {"ปิด","จุดที่ 1", "จุดที่ 2", "จุดที่ 3", "จุดที่ 4", "จุดที่ 5", "จุดที่ 6", "จุดที่ 7", "จุดที่ 8", "จุดที่ 9"},
+    Values = {"ปิด","จุดที่ 1", "จุดที่ 2", "จุดที่ 3", "จุดที่ 4", "จุดที่ 5", "จุดที่ 6", "จุดที่ 7", "จุดที่ 8", "จุดที่ 9", "จุดที่ 10", "จุดที่ 11", "จุดที่ 12"},
     Default = "ปิด",
 })
 
@@ -799,12 +806,15 @@ local P_Zone5 = CFrame.new(761.993469, -2.511586, -129.503113, 1,0,0,0,1,0,0,0,1
 local P_Zone6 = CFrame.new(1083.314575, -2.511588, -129.501953, 1,0,0,0,1,0,0,0,1)
 local P_Zone7 = CFrame.new(1573.947632, -2.511583, -129.509949, 1,0,0,0,1,0,0,0,1)
 local P_Zone8 = CFrame.new(2276.26221, -5.99998856, -126.776489, 1,0,0,0,1,0,0,0,1) -- พิกัดจุด 3 ของน้อง
-local P_Zone9 = CFrame.new(2632.862061, -2.511454, -129.501831, 1,0,0,0,1,0,0,0,1)
+local P_Zone9 = CFrame.new(2984.003, 3.49, -129.281, 1,0,0,0,1,0,0,0,1)
+local P_Zone10 = CFrame.new(3339.000, 3.49, -129.404, 1,0,0,0,1,0,0,0,1)
+local P_Zone11 = CFrame.new(3693.999, 3.49, -129.393, 1,0,0,0,1,0,0,0,1)
+local P_Zone12 = CFrame.new(4048.976, 3.49, -129.403, 1,0,0,0,1,0,0,0,1)
 
 -- [[ 4. ส่วน UI Dropdown (2-in-1) ]]
 local ZoneWarp = WarpTab:AddDropdown("ZoneWarpDropdown", {
     Title = "บินแบบ 3 จังหวะ (จุดพัก 1-2 -> โซนที่เลือก)",
-    Values = {"ปิด", "โซน 1", "โซน 2", "โซน 3", "โซน 4", "โซน 5", "โซน 6", "โซน 7", "โซน 8", "โซน 9"},
+    Values = {"ปิด", "โซน 1", "โซน 2", "โซน 3", "โซน 4", "โซน 5", "โซน 6", "โซน 7", "โซน 8", "โซน 9", "โซน 10", "โซน 11", "โซน 12"},
     Multi = false,
     Default = "ปิด",
 })
@@ -820,7 +830,10 @@ ZoneWarp:OnChanged(function(Value)
     elseif Value == "โซน 6" then target = P_Zone6
     elseif Value == "โซน 7" then target = P_Zone7
     elseif Value == "โซน 8" then target = P_Zone8
-    elseif Value == "โซน 9" then target = P_Zone9 end
+    elseif Value == "โซน 9" then target = P_Zone9
+    elseif Value == "โซน 10" then target = P_Zone10
+    elseif Value == "โซน 11" then target = P_Zone11
+    elseif Value == "โซน 12" then target = P_Zone12 end
 
     if target then WarpTo(target) end
     ZoneWarp:SetValue("ปิด")
@@ -839,6 +852,8 @@ local Locations = {
     [9] = CFrame.new(2984.003, -2.511, -129.281), [10] = CFrame.new(3339.000, -2.511, -129.404),
     [11] = CFrame.new(3693.999, -2.511, -129.393), [12] = CFrame.new(4048.976, -2.511, -129.403)
 }
+
+
 
 local CurrentZone = 1
 local lp = game:GetService("Players").LocalPlayer
@@ -941,9 +956,45 @@ end)
 
 local divider = Instance.new("TextLabel", Frame)
 divider.Size = UDim2.new(1, 0, 0, 30)
+divider.Text = "บักเตี้ยเจเจ"
+divider.TextColor3 = Color3.new(0.5, 0.5, 0.5)
+divider.BackgroundTransparency = 1
+
+-- [[ วางต่อจากปุ่ม ถอยหลัง ได้เลยคัฟ ]]
+
+createBtn(Frame, "🏠 กลับบ้าน (STEP-BACK)", Color3.new(0.4, 0, 0), Color3.new(1, 1, 1), function()
+    if flying then return end
+    flying = true
+
+    local start = getClosestPart() -- ฟังก์ชันที่เช็คจุด 1, 2, 3
+
+    if start == 3 then
+        WarpTo(part3.CFrame)
+        WarpTo(part2.CFrame)
+        WarpTo(part1.CFrame)
+    elseif start == 2 then
+        WarpTo(part2.CFrame)
+        WarpTo(part1.CFrame)
+    else
+        WarpTo(part1.CFrame)
+    end
+
+    CurrentZone = 1
+    ZoneDisplay.Text = "SELECTED: ZONE " .. CurrentZone
+    flying = false
+end)
+
+-- [[ ต่อด้วยตัวแบ่งชื่อ บักคอปเตอร์ (มีอยู่แล้วในโค้ดเดิม) ]]
+local divider = Instance.new("TextLabel", Frame)
+divider.Size = UDim2.new(1, 0, 0, 30)
 divider.Text = "บักคอปเตอร์บักจ่อย"
 divider.TextColor3 = Color3.new(0.5, 0.5, 0.5)
 divider.BackgroundTransparency = 1
+
+-- [[ แล้วค่อยตามด้วย Loop ปุ่ม Zone 1-12 ]]
+for i = 1, 12 do
+    -- ... โค้ดสร้างปุ่ม Zone ...
+end
 
 for i = 1, 12 do
     createBtn(Frame, "2-IN-1: ZONE " .. i, Color3.new(0.05, 0.05, 0.05), Color3.new(1, 1, 1), function()
@@ -952,6 +1003,8 @@ for i = 1, 12 do
         WarpTo(Locations[i])
     end)
 end
+
+
 
 -- [[ --------------------------------------------------------- ]]
 -- [[ ส่วนที่ 2: สวิตช์เปิด/ปิดปุ่มลอย ]]
@@ -984,6 +1037,9 @@ ZoneSection:AddButton({ Title = "วาร์ป โซน 6", Callback = functi
 ZoneSection:AddButton({ Title = "วาร์ป โซน 7", Callback = function() WarpTo(P_Zone7) end })
 ZoneSection:AddButton({ Title = "วาร์ป โซน 8 (จุดสาม)", Callback = function() WarpTo(P_Zone8) end })
 ZoneSection:AddButton({ Title = "วาร์ป โซน 9", Callback = function() WarpTo(P_Zone9) end })
+ZoneSection:AddButton({ Title = "วาร์ป โซน 10", Callback = function() WarpTo(P_Zone10) end })
+ZoneSection:AddButton({ Title = "วาร์ป โซน 11", Callback = function() WarpTo(P_Zone11) end })
+ZoneSection:AddButton({ Title = "วาร์ป โซน 12", Callback = function() WarpTo(P_Zone12) end })
 local HttpService = game:GetService("HttpService")
 local ConfigFolder = "UHub_Configs"
 

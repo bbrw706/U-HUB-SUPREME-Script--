@@ -12,7 +12,7 @@ _G.AutoFarm = false
 _G.IsHiding = false
 _G.FlySequence = false
 local SelectedZoneID = 1
-local HomePos = Vector3.new(127.51, 3.49, 11.21)
+local HomePos = Vector3.new(127.51, 2.51, 11.21)
 
 local Locations = {
     ["จุดที่ 1"] = Vector3.new(197.34, -2.51, -94.93),

@@ -976,6 +976,32 @@ createBtn(Frame, "Previous Zone", Color3.new(0.15, 0.15, 0.15), Color3.new(1, 1,
     WarpTo(Locations[targetIdx])
 end)
 
+-- [[ วางต่อจากปุ่ม ถอยหลัง ได้เลยคัฟ ]]
+
+createBtn(Frame, "🏠(STEP-BACK)", Color3.new(0.4, 0, 0), Color3.new(1, 1, 1), function()
+    if flying then return end
+    flying = true
+
+    local start = getClosestPart() -- ฟังก์ชันที่เช็คจุด 1, 2, 3
+
+    if start == 3 then
+        WarpTo(part3.CFrame)
+        WarpTo(part2.CFrame)
+        WarpTo(part1.CFrame)
+    elseif start == 2 then
+        WarpTo(part2.CFrame)
+        WarpTo(part1.CFrame)
+    else
+        WarpTo(part1.CFrame)
+    end
+
+    CurrentZone = 1
+    ZoneDisplay.Text = "SELECTED: ZONE " .. CurrentZone
+    flying = false
+end)
+
+
+
 local divider = Instance.new("TextLabel", Frame)
 divider.Size = UDim2.new(1, 0, 0, 30)
 divider.Text = "U-HUB NAVIGATION"
@@ -990,6 +1016,8 @@ for i = 1, 12 do
         WarpTo(Locations[i])
     end)
 end
+
+
 
 if WarpTab then
     WarpTab:AddToggle("ShowBlackUI", {

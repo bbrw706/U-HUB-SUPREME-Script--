@@ -119,7 +119,9 @@ end
 local function GetTarget(Point)
     local Target, Closest = nil, _G.U_HUB_CORE.FovRadius
     for _, v in pairs(Players:GetPlayers()) do
-        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
+        local isWL = false
+        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == v.Name then isWL = true; break end end
+        if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
             local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
             if Part then
                 local Mag = (LocalPlayer.Character.HumanoidRootPart.Position - Part.Position).Magnitude
@@ -326,7 +328,25 @@ Tabs.Settings:AddButton({
     end
 })
 
--- [[ WHITELIST ]]
+-- Whitelist Dropdown
 _G.U_HUB_CORE.Whitelist = {}
-local WLDrop = Tabs.Visuals:AddDropdown("WLDrop", {Title = "ไม่ล็อคเป้าคนนี้", Values = {}, Default = {}, Multi = true, Callback = function(v) _G.U_HUB_CORE.Whitelist = {} for name, sel in pairs(v) do if sel then table.insert(_G.U_HUB_CORE.Whitelist, name) end end end})
-task.spawn(function() while true do local n = {} for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(n, p.Name) end end WLDrop:SetValues(n) task.wait(3) end end)
+local WLDrop = Tabs.Visuals:AddDropdown("WLDrop", {
+    Title = "ไม่ล็อคเป้าคนนี้",
+    Values = (function() local n={} for _,p in pairs(Players:GetPlayers()) do if p~=LocalPlayer then table.insert(n,p.Name) end end return n end)(),
+    Default = {},
+    Multi = true,
+    Callback = function(v)
+        _G.U_HUB_CORE.Whitelist = {}
+        for n, s in pairs(v) do if s then table.insert(_G.U_HUB_CORE.Whitelist, n) end end
+    end
+})
+task.spawn(function()
+    while true do
+        task.wait(3)
+        local n = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then table.insert(n, p.Name) end
+        end
+        WLDrop:SetValues(n)
+    end
+end)

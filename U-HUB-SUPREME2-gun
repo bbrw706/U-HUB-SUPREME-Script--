@@ -98,6 +98,71 @@ Tabs.Combat:AddDropdown("MouseSpecial", { Title = "โหมดความโ�
 Tabs.Visuals:AddToggle("ShowFovBtn", {Title = "แสดงวงกลม POV", Default = true}):OnChanged(function(Value) _G.U_HUB_CORE.FovEnabled = Value end)
 Tabs.Visuals:AddSlider("FOVSize", { Title = "POV Radius", Default = 150, Min = 50, Max = 800, Rounding = 0, Callback = function(Value) _G.U_HUB_CORE.FovRadius = Value end})
 Tabs.Visuals:AddColorpicker("POVColor", {Title = "POV Color", Default = Color3.fromRGB(255, 255, 255)}):OnChanged(function(Value) _G.U_HUB_CORE.PovColor = Value end)
+-- =========================================
+-- [ Whitelist - เลือกคนที่จะไม่ล็อคเป้า ]
+-- =========================================
+local VisualsSection = VisualsTab:AddSection("Whitelist (ไม่ล็อคเป้าคนนี้)")
+
+local whitelist = {} -- รายชื่อคนที่ไม่ล็อค
+local whitelistEnabled = false
+
+-- Toggle เปิด/ปิด Whitelist
+VisualsTab:AddToggle("WhitelistToggle", {
+    Title = "เปิดใช้งาน Whitelist",
+    Default = false,
+    Callback = function(v)
+        whitelistEnabled = v
+    end
+})
+
+-- ฟังก์ชันดึงรายชื่อคนในเซิร์ฟ
+local function getPlayerNames()
+    local names = {}
+    for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+        if plr ~= game.Players.LocalPlayer then
+            table.insert(names, plr.Name)
+        end
+    end
+    return names
+end
+
+-- Dropdown เลือกชื่อคนที่จะไม่ล็อค
+local whitelistDropdown = VisualsTab:AddDropdown("WhitelistDropdown", {
+    Title = "เลือกคนที่จะไม่ล็อคเป้า",
+    Values = getPlayerNames(),
+    Default = {},
+    Multi = true, -- เลือกได้หลายคนครับ
+    Callback = function(v)
+        whitelist = {}
+        for name, selected in pairs(v) do
+            if selected then
+                table.insert(whitelist, name)
+            end
+        end
+    end
+})
+
+-- ปุ่ม Refresh รายชื่อ
+VisualsTab:AddButton({
+    Title = "🔄 Refresh รายชื่อ",
+    Description = "อัปเดตรายชื่อคนในเซิร์ฟใหม่",
+    Callback = function()
+        whitelistDropdown:SetValues(getPlayerNames())
+    end
+})
+
+-- ฟังก์ชันเช็คว่าคนนี้อยู่ใน Whitelist มั้ย
+-- เอาไปใช้ในระบบล็อคเป้าได้เลยครับ
+function IsWhitelisted(playerName)
+    if not whitelistEnabled then return false end
+    for _, name in pairs(whitelist) do
+        if name == playerName then
+            return true -- อยู่ใน Whitelist = ไม่ล็อคครับ
+        end
+    end
+    return false
+end
+
 
 -- [[ ESP ]]
 Tabs.ESP:AddDropdown("ESP_Style", { Title = "เลือกรูปแบบ ESP", Values = {"ปิด", "Normal (เส้นขอบ)", "Hardcore (เรืองแสง)"}, Default = "ปิด", Callback = function(Value) _G.U_HUB_CORE.EspStyle = Value end })

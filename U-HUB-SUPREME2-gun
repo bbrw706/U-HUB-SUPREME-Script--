@@ -326,3 +326,7 @@ Tabs.Settings:AddButton({
     end
 })
 
+-- [[ WHITELIST ]]
+_G.U_HUB_CORE.Whitelist = {}
+local WLDrop = Tabs.Visuals:AddDropdown("WLDrop", {Title = "ไม่ล็อคเป้าคนนี้", Values = {}, Default = {}, Multi = true, Callback = function(v) _G.U_HUB_CORE.Whitelist = {} for name, sel in pairs(v) do if sel then table.insert(_G.U_HUB_CORE.Whitelist, name) end end end})
+task.spawn(function() while true do local n = {} for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(n, p.Name) end end WLDrop:SetValues(n) task.wait(3) end end)

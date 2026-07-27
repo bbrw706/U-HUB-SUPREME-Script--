@@ -1,10 +1,9 @@
--- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION ]]
+-- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION (ULTIMATE ANTI-WALL COLLISION FIX) ]]
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local PathfindingService = game:GetService("PathfindingService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -20,7 +19,9 @@ _G.U_HUB_CORE = {
     AutoLockNoClick = false, 
     AimPart = "Head",
     Sensitivity = 0.05,
-    AiSmoothness = 0.05, -- ค่าสไลด์ความเร็วการล็อกเป้าของ AI
+    AiSmoothness = 0.05,
+    AiWalkRadius = 100, 
+    AiTargetMode = "ล็อกปกติ (เจอตัวก่อนค่อยล็อก)",
     FovEnabled = false,
     FovRadius = 150,
     LockMode = "Normal (ระยะสายตา)",
@@ -111,6 +112,15 @@ Tabs.QwenAI:AddToggle("AutoFarmToggle", {
     _G.U_HUB_CORE.AutoFarmEnabled = Value 
 end)
 
+Tabs.QwenAI:AddDropdown("AiTargetModeDrop", {
+    Title = "โหมดการล็อกเป้าของ AI",
+    Values = {"ล็อกปกติ (เจอตัวก่อนค่อยล็อก)", "ล็อกโหด (ทะลุกำแพง)"},
+    Default = "ล็อกปกติ (เจอตัวก่อนค่อยล็อก)",
+    Callback = function(Value)
+        _G.U_HUB_CORE.AiTargetMode = Value
+    end
+})
+
 Tabs.QwenAI:AddSlider("AiSmoothSlider", {
     Title = "ความเร็วในการล็อกเป้าของ AI",
     Default = 0.05,
@@ -122,6 +132,17 @@ Tabs.QwenAI:AddSlider("AiSmoothSlider", {
     end
 })
 
+Tabs.QwenAI:AddSlider("AiWalkRadiusSlider", {
+    Title = "รัศมีการเดินของ AI",
+    Default = 100,
+    Min = 100,
+    Max = 10000,
+    Rounding = 0,
+    Callback = function(Value)
+        _G.U_HUB_CORE.AiWalkRadius = Value
+    end
+})
+
 -- [[ COMBAT ]]
 Tabs.Combat:AddToggle("AutoLock", {Title = "ล็อคเป้า (เมื่อเปิด จะล็อคเข้ากลางจอทันที)", Default = false}):OnChanged(function(Value) _G.U_HUB_CORE.AutoLockNoClick = Value end)
 Tabs.Combat:AddSlider("Smooth", { Title = "ความเร็วในการล็อค", Default = 0.05, Min = 0.01, Max = 1, Rounding = 2, Callback = function(Value) _G.U_HUB_CORE.Sensitivity = Value end})
@@ -129,7 +150,7 @@ Tabs.Combat:AddDropdown("AimPartDropdown", { Title = "เลือกจุด�
 Tabs.Combat:AddDropdown("MouseSpecial", { Title = "โหมดความโหด", Values = {"Normal (ระยะสายตา)", "Hardcore (ล็อคโหด)"}, Default = "Normal (ระยะสายตา)", Callback = function(Value) _G.U_HUB_CORE.LockMode = Value end })
 
 -- [[ VISUALS ]]
-Tabs.Visuals:AddToggle("ShowFovBtn", {Title = "แสดงวงกลม POV", Default = true}):OnChanged(function(Value) _G.U_HUB_CORE.FovEnabled = Value end)
+Tabs.Visuals:AddToggle("ShowFovBtn", {Title = "แสดงวงกลม POV", Default = false}):OnChanged(function(Value) _G.U_HUB_CORE.FovEnabled = Value end)
 Tabs.Visuals:AddSlider("FOVSize", { Title = "POV Radius", Default = 150, Min = 50, Max = 800, Rounding = 0, Callback = function(Value) _G.U_HUB_CORE.FovRadius = Value end})
 Tabs.Visuals:AddColorpicker("POVColor", {Title = "POV Color", Default = Color3.fromRGB(255, 255, 255)}):OnChanged(function(Value) _G.U_HUB_CORE.PovColor = Value end)
 
@@ -337,7 +358,7 @@ local function SafeHumanClick()
         mouse1click()
     elseif mouse1press and mouse1release then
         mouse1press()
-        task.delay(math.random(2, 5) / 100, function() mouse1release() end)
+        task.delay(math.random(3, 7) / 100, function() mouse1release() end)
     else
         local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
         if tool then tool:Activate() end
@@ -366,14 +387,80 @@ if not _G.FOV_Gui then
     _G.FOV_Stroke = uiStroke
 end
 
--- [[ TARGET & VISUAL ANALYZER ]]
+-- [[ GET CLOSEST TARGET OR FIND ANY PLAYER AROUND ]]
+local function GetClosestTargetAuto()
+    local targetPart = nil
+    local shortestDist = math.huge
+    local visualState = nil
+
+    for _, v in pairs(Players:GetPlayers()) do
+        local isWL = false
+        local playerName = v.Name
+        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == playerName then isWL = true; break end end
+        if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
+            local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
+            if Part and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local Mag = (LocalPlayer.Character.HumanoidRootPart.Position - Part.Position).Magnitude
+                if Mag <= _G.U_HUB_CORE.MaxLockDistance then
+                    local RayParams = RaycastParams.new()
+                    RayParams.FilterType = Enum.RaycastFilterType.Exclude
+                    RayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+                    local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
+
+                    local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
+                    local mode = _G.U_HUB_CORE.AiTargetMode
+
+                    if mode == "ล็อกโหด (ทะลุกำแพง)" or hasLoS then
+                        if Mag < shortestDist then
+                            shortestDist = Mag
+                            targetPart = Part
+                            local Pos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+                            visualState = {
+                                myHealth = LocalPlayer.Character.Humanoid.Health,
+                                targetDistance = math.floor(Mag),
+                                targetOnScreen = OnScreen,
+                                hasLineOfSight = hasLoS
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return targetPart, visualState
+end
+
+-- [[ GET ANY ALIVE PLAYER FOR ROAMING / SCANNING ]]
+local function GetAnyPlayerToHunt()
+    local bestPart = nil
+    local shortestDist = math.huge
+    for _, v in pairs(Players:GetPlayers()) do
+        local isWL = false
+        local playerName = v.Name
+        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == playerName then isWL = true; break end end
+        if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
+            local Part = v.Character:FindFirstChild("HumanoidRootPart") or v.Character:FindFirstChild("Head")
+            if Part and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local Mag = (LocalPlayer.Character.HumanoidRootPart.Position - Part.Position).Magnitude
+                if Mag < shortestDist then
+                    shortestDist = Mag
+                    bestPart = Part
+                end
+            end
+        end
+    end
+    return bestPart
+end
+
+-- [[ TARGET & VISUAL ANALYZER FOR NORMAL LOCK ]]
 local function GetTarget(Point)
     local Target, Closest = nil, _G.U_HUB_CORE.FovRadius
     local visualState = nil
 
     for _, v in pairs(Players:GetPlayers()) do
         local isWL = false
-        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == v.Name then isWL = true; break end end
+        local playerName = v.Name
+        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == playerName then isWL = true; break end end
         if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
             local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
             if Part then
@@ -388,14 +475,17 @@ local function GetTarget(Point)
                             RayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
                             local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
 
-                            if _G.U_HUB_CORE.LockMode == "Hardcore (ล็อคโหด)" or Result == nil or Result.Instance:IsDescendantOf(v.Character) then
+                            local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
+                            local modeCheck = _G.U_HUB_CORE.LockMode
+
+                            if modeCheck == "Hardcore (ล็อคโหด)" or hasLoS then
                                 Closest = Dist
                                 Target = Part
                                 visualState = {
                                     myHealth = LocalPlayer.Character.Humanoid.Health,
                                     targetDistance = math.floor(Mag),
                                     targetOnScreen = OnScreen,
-                                    hasLineOfSight = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
+                                    hasLineOfSight = hasLoS
                                 }
                             end
                         end
@@ -410,10 +500,9 @@ end
 -- Loop ส่งคำสั่งไป AI วิเคราะห์สถานการณ์
 task.spawn(function()
     while true do
-        task.wait(1.2)
+        task.wait(1.5)
         if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            local _, visualState = GetTarget(Center)
+            local _, visualState = GetClosestTargetAuto()
             if visualState then
                 AskQwenAI(visualState)
             end
@@ -423,8 +512,12 @@ end)
 
 -- [[ MAIN EXECUTION LOOP ]]
 local LastShootTime = 0
+local LastPosition = Vector3.new(0,0,0)
+local StuckTimer = 0
+local RoamAngle = 0
+local SmoothVelocity = Vector3.new(0,0,0)
 
-RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function(dt)
     local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
     if _G.FOV_CircleFrame then
@@ -438,58 +531,111 @@ RunService.RenderStepped:Connect(function()
     local LockTarget = nil
     local visualState = nil
 
-    if _G.U_HUB_CORE.AutoFarmEnabled or _G.U_HUB_CORE.AutoLockNoClick then
+    if _G.U_HUB_CORE.AutoLockNoClick then
         LockTarget, visualState = GetTarget(Center)
     end
 
-    if LockTarget then
-        local jitter = Vector3.new(math.random(-10, 10)/100, math.random(-10, 10)/100, 0)
-        local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
-        
-        -- ใช้ความเร็ว (Sensitivity) ตามโหมดที่ทำงานอยู่
-        local currentSens = _G.U_HUB_CORE.AutoFarmEnabled and _G.U_HUB_CORE.AiSmoothness or _G.U_HUB_CORE.Sensitivity
-        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
+    -- ระบบ AI Bot เดินออโต้ พร้อมระบบป้องกันการเดินชนกำแพงแบบหายขาด (Ultimate Anti-Wall)
+    if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local autoTargetPart, autoState = GetClosestTargetAuto()
+        local humanoid = LocalPlayer.Character.Humanoid
+        local root = LocalPlayer.Character.HumanoidRootPart
 
-        if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local humanoid = LocalPlayer.Character.Humanoid
-            local root = LocalPlayer.Character.HumanoidRootPart
-            local targetRoot = LockTarget.Parent:FindFirstChild("HumanoidRootPart") or LockTarget
+        local destinationPos = nil
 
-            if visualState and visualState.hasLineOfSight then
-                local randomDelay = math.random(18, 32) / 100
+        if autoTargetPart then
+            LockTarget = autoTargetPart
+            visualState = autoState
+
+            if autoState and autoState.hasLineOfSight then
+                local randomDelay = math.random(25, 45) / 100
                 if tick() - LastShootTime > randomDelay then
                     LastShootTime = tick()
                     SafeHumanClick()
                 end
             end
 
-            if targetRoot then
-                local destinationPos = targetRoot.Position
+            local targetRoot = autoTargetPart.Parent:FindFirstChild("HumanoidRootPart") or autoTargetPart
+            destinationPos = targetRoot.Position
+            local currentRadius = math.clamp(_G.U_HUB_CORE.AiWalkRadius, 5, 50)
 
-                if CurrentTactic == "FLANK" then
-                    destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * 12)
-                elseif CurrentTactic == "JUMP_SHOOT" then
-                    if math.random(1, 20) == 1 and humanoid.FloorMaterial ~= Enum.Material.Air then
-                        humanoid.Jump = true
-                    end
-                    destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * (math.random(-1, 1) * 8))
-                elseif CurrentTactic == "RETREAT" then
-                    destinationPos = root.Position + (root.Position - targetRoot.Position).Unit * 20
+            if CurrentTactic == "FLANK" then
+                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * currentRadius)
+            elseif CurrentTactic == "JUMP_SHOOT" then
+                if math.random(1, 25) == 1 and humanoid.FloorMaterial ~= Enum.Material.Air then
+                    humanoid.Jump = true
                 end
-
-                local path = PathfindingService:CreatePath({ AgentRadius = 3, AgentHeight = 6, AgentCanJump = true })
-                pcall(function()
-                    path:ComputeAsync(root.Position, destinationPos)
-                    local waypoints = path:GetWaypoints()
-                    if waypoints and #waypoints > 1 then
-                        humanoid:MoveTo(waypoints[2].Position)
-                        if waypoints[2].Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-                    else
-                        humanoid:MoveTo(destinationPos)
-                    end
-                end)
+                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * (math.random(-1, 1) * 12))
+            elseif CurrentTactic == "RETREAT" then
+                destinationPos = root.Position + (root.Position - targetRoot.Position).Unit * 25
+            end
+        else
+            local huntTarget = GetAnyPlayerToHunt()
+            if huntTarget then
+                destinationPos = huntTarget.Position
+            else
+                RoamAngle = RoamAngle + 1.2 * dt
+                local offset = Vector3.new(math.cos(RoamAngle) * 40, 0, math.sin(RoamAngle) * 40)
+                destinationPos = root.Position + offset
             end
         end
+
+        -- ระบบเช็คว่าตัวละครติดแหง็กอยู่กับที่หรือไม่
+        if (root.Position - LastPosition).Magnitude < 0.3 then
+            StuckTimer = StuckTimer + dt
+            if StuckTimer > 0.3 then
+                humanoid.Jump = true
+                -- ถ้าติดให้สุ่มพุ่งกระโดดฉีกออกด้านข้างทันทีเพื่อแก้ทางตัน
+                destinationPos = root.Position + Vector3.new(math.random(-40, 40), 0, math.random(-40, 40))
+                StuckTimer = 0
+            end
+        else
+            StuckTimer = 0
+        end
+        LastPosition = root.Position
+
+        -- ระบบ Multi-Raycast ตรวจจับสิ่งกีดขวางรอบตัวแบบ 360 องศาเพื่อเลี่ยงกำแพง
+        if destinationPos then
+            local moveDir = (destinationPos - root.Position)
+            moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
+            
+            if moveDir.Magnitude > 0.1 then
+                moveDir = moveDir.Unit
+                local rayParams = RaycastParams.new()
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                rayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+
+                -- ยิงเรย์แคสต์ตรวจเช็ค 3 จุด (ตรงกลาง, เฉียงซ้าย, เฉียงขวา)
+                local checkDist = 6
+                local hitCenter = workspace:Raycast(root.Position, moveDir * checkDist, rayParams)
+                local leftDir = CFrame.Angles(0, math.rad(-45), 0) * moveDir
+                local hitLeft = workspace:Raycast(root.Position, leftDir * checkDist, rayParams)
+                local rightDir = CFrame.Angles(0, math.rad(45), 0) * moveDir
+                local hitRight = workspace:Raycast(root.Position, rightDir * checkDist, rayParams)
+
+                if hitCenter then
+                    humanoid.Jump = true
+                    if not hitLeft then
+                        moveDir = leftDir
+                    elseif not hitRight then
+                        moveDir = rightDir
+                    else
+                        -- ถ้าตันหมด ให้หักเลี้ยวกลับหรือสุ่มทิศทางใหม่ทันที
+                        moveDir = -moveDir
+                    end
+                end
+
+                SmoothVelocity = SmoothVelocity:Lerp(moveDir * humanoid.WalkSpeed, 0.2)
+                humanoid:Move(SmoothVelocity.Unit * math.min(SmoothVelocity.Magnitude, humanoid.WalkSpeed), false)
+            end
+        end
+    end
+
+    if LockTarget then
+        local jitter = Vector3.new(math.random(-10, 10)/100, math.random(-10, 10)/100, 0)
+        local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
+        local currentSens = _G.U_HUB_CORE.AutoFarmEnabled and _G.U_HUB_CORE.AiSmoothness or _G.U_HUB_CORE.Sensitivity
+        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
     end
 
     -- ESP SYSTEM

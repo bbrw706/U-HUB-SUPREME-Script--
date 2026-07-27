@@ -20,6 +20,7 @@ _G.U_HUB_CORE = {
     AutoLockNoClick = false, 
     AimPart = "Head",
     Sensitivity = 0.05,
+    AiSmoothness = 0.05, -- ค่าสไลด์ความเร็วการล็อกเป้าของ AI
     FovEnabled = false,
     FovRadius = 150,
     LockMode = "Normal (ระยะสายตา)",
@@ -109,6 +110,17 @@ Tabs.QwenAI:AddToggle("AutoFarmToggle", {
 }):OnChanged(function(Value) 
     _G.U_HUB_CORE.AutoFarmEnabled = Value 
 end)
+
+Tabs.QwenAI:AddSlider("AiSmoothSlider", {
+    Title = "ความเร็วในการล็อกเป้าของ AI",
+    Default = 0.05,
+    Min = 0.01,
+    Max = 1,
+    Rounding = 2,
+    Callback = function(Value)
+        _G.U_HUB_CORE.AiSmoothness = Value
+    end
+})
 
 -- [[ COMBAT ]]
 Tabs.Combat:AddToggle("AutoLock", {Title = "ล็อคเป้า (เมื่อเปิด จะล็อคเข้ากลางจอทันที)", Default = false}):OnChanged(function(Value) _G.U_HUB_CORE.AutoLockNoClick = Value end)
@@ -415,7 +427,6 @@ local LastShootTime = 0
 RunService.RenderStepped:Connect(function()
     local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
-    -- วงกลม POV จะขึ้นมาต่อเมื่อเปิดปุ่ม "แสดงวงกลม POV" และเปิดระบบ "ล็อกเป้า" หรือ "ออโต้ฟาร์ม" แล้วเท่านั้น
     if _G.FOV_CircleFrame then
         local isLockActive = _G.U_HUB_CORE.AutoLockNoClick or _G.U_HUB_CORE.AutoFarmEnabled
         _G.FOV_CircleFrame.Visible = _G.U_HUB_CORE.FovEnabled and isLockActive
@@ -434,7 +445,10 @@ RunService.RenderStepped:Connect(function()
     if LockTarget then
         local jitter = Vector3.new(math.random(-10, 10)/100, math.random(-10, 10)/100, 0)
         local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
-        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, _G.U_HUB_CORE.Sensitivity)
+        
+        -- ใช้ความเร็ว (Sensitivity) ตามโหมดที่ทำงานอยู่
+        local currentSens = _G.U_HUB_CORE.AutoFarmEnabled and _G.U_HUB_CORE.AiSmoothness or _G.U_HUB_CORE.Sensitivity
+        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
 
         if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local humanoid = LocalPlayer.Character.Humanoid

@@ -1,4 +1,4 @@
--- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION (ULTIMATE ANTI-WALL COLLISION FIX) ]]
+-- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION (FINAL ERROR FIXED) ]]
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local TweenService = game:GetService("TweenService")
@@ -17,6 +17,8 @@ _G.U_HUB_CORE = {
     GroqApiKey = "", 
     AutoFarmEnabled = false, 
     AutoLockNoClick = false, 
+    AutoRespawnPlay = false,
+    RespawnDelay = 0.1,
     AimPart = "Head",
     Sensitivity = 0.05,
     AiSmoothness = 0.05,
@@ -86,12 +88,71 @@ UserInputService.InputChanged:Connect(function(input) if dragging and (input.Use
 
 -- [[ 4. TABS ]]
 local Tabs = { 
+    Home = Window:AddTab({ Title = "หน้าแรก", Icon = "home" }),
     QwenAI = Window:AddTab({ Title = "Qwen AI Bot", Icon = "bot" }),
     Combat = Window:AddTab({ Title = "Combat", Icon = "target" }), 
     Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
     ESP = Window:AddTab({ Title = "ESP", Icon = "ghost" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
+
+-- [[ HOME TAB ]]
+Tabs.Home:AddButton({
+    Title = "🏠 กลับล็อบบี้",
+    Description = "ส่งคำสั่งกลับไปยังหน้า Lobby ของเกม",
+    Callback = function()
+        local args = { "Lobby" }
+        pcall(function()
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer(unpack(args))
+        end)
+    end
+})
+
+Tabs.Home:AddButton({
+    Title = "▶️ กดเล่น (Play)",
+    Description = "ส่งคำสั่งเริ่มเล่นเกมทันที",
+    Callback = function()
+        local args = { "Play" }
+        pcall(function()
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer(unpack(args))
+        end)
+    end
+})
+
+Tabs.Home:AddToggle("AutoPlayDeath", {
+    Title = "🔄 เกิดอัตโนมัติเมื่อตาย",
+    Description = "ระบบยิงรีโมท Play อัตโนมัติเมื่อตัวละครตาย",
+    Default = false
+}):OnChanged(function(Value)
+    _G.U_HUB_CORE.AutoRespawnPlay = Value
+end)
+
+Tabs.Home:AddSlider("RespawnDelaySlider", {
+    Title = "⏱️ ความเร็วในการกดเกิด (วินาที)",
+    Default = 0.1,
+    Min = 0.1,
+    Max = 5.0,
+    Rounding = 1,
+    Callback = function(Value)
+        _G.U_HUB_CORE.RespawnDelay = Value
+    end
+})
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if _G.U_HUB_CORE.AutoRespawnPlay or _G.U_HUB_CORE.AutoFarmEnabled then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then
+                    task.wait(_G.U_HUB_CORE.RespawnDelay)
+                    local args = { "Play" }
+                    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer(unpack(args))
+                end
+            end)
+        end
+    end
+end)
 
 -- [[ QWEN AI BOT TAB ]]
 Tabs.QwenAI:AddInput("GroqApiKeyInput", {
@@ -106,7 +167,7 @@ Tabs.QwenAI:AddInput("GroqApiKeyInput", {
 })
 
 Tabs.QwenAI:AddToggle("AutoFarmToggle", {
-    Title = "เปิดระบบ Qwen AI Bot (ออโต้ฟาร์ม/เดินยิง)", 
+    Title = "เปิดระบบ Qwen AI Bot (ออโต้ฟาร์ม/เดินยิง + เกิด 0.1 วิ)", 
     Default = false
 }):OnChanged(function(Value) 
     _G.U_HUB_CORE.AutoFarmEnabled = Value 
@@ -154,7 +215,6 @@ Tabs.Visuals:AddToggle("ShowFovBtn", {Title = "แสดงวงกลม POV",
 Tabs.Visuals:AddSlider("FOVSize", { Title = "POV Radius", Default = 150, Min = 50, Max = 800, Rounding = 0, Callback = function(Value) _G.U_HUB_CORE.FovRadius = Value end})
 Tabs.Visuals:AddColorpicker("POVColor", {Title = "POV Color", Default = Color3.fromRGB(255, 255, 255)}):OnChanged(function(Value) _G.U_HUB_CORE.PovColor = Value end)
 
--- Whitelist Dropdown
 _G.U_HUB_CORE.Whitelist = {}
 local WLDrop = Tabs.Visuals:AddDropdown("WLDrop", {
     Title = "ไม่ล็อคเป้าคนนี้",
@@ -252,7 +312,7 @@ local function ForceExtremeBoost()
 end
 
 Tabs.Settings:AddButton({
-    Title = "เปิดโหมด Extreme Boost (เป๊ะตาม FastFlags)",
+    Title = "เปิดโหมด Extreme Boost",
     Callback = function() ForceExtremeBoost() end
 })
 
@@ -352,7 +412,6 @@ Respond ONLY with JSON: {"tactic": "CHOSEN_TACTIC"}
     end)
 end
 
--- [[ SAFE CLICK EXECUTION ]]
 local function SafeHumanClick()
     if mouse1click then
         mouse1click()
@@ -365,7 +424,6 @@ local function SafeHumanClick()
     end
 end
 
--- [[ FOV GUI INIT ]]
 if not _G.FOV_Gui then
     local fovHolder = Instance.new("ScreenGui", game.CoreGui)
     fovHolder.Name = "U_FOV_GUI"
@@ -387,7 +445,6 @@ if not _G.FOV_Gui then
     _G.FOV_Stroke = uiStroke
 end
 
--- [[ GET CLOSEST TARGET OR FIND ANY PLAYER AROUND ]]
 local function GetClosestTargetAuto()
     local targetPart = nil
     local shortestDist = math.huge
@@ -430,7 +487,6 @@ local function GetClosestTargetAuto()
     return targetPart, visualState
 end
 
--- [[ GET ANY ALIVE PLAYER FOR ROAMING / SCANNING ]]
 local function GetAnyPlayerToHunt()
     local bestPart = nil
     local shortestDist = math.huge
@@ -452,7 +508,6 @@ local function GetAnyPlayerToHunt()
     return bestPart
 end
 
--- [[ TARGET & VISUAL ANALYZER FOR NORMAL LOCK ]]
 local function GetTarget(Point)
     local Target, Closest = nil, _G.U_HUB_CORE.FovRadius
     local visualState = nil
@@ -497,7 +552,6 @@ local function GetTarget(Point)
     return Target, visualState
 end
 
--- Loop ส่งคำสั่งไป AI วิเคราะห์สถานการณ์
 task.spawn(function()
     while true do
         task.wait(1.5)
@@ -510,7 +564,6 @@ task.spawn(function()
     end
 end)
 
--- [[ MAIN EXECUTION LOOP ]]
 local LastShootTime = 0
 local LastPosition = Vector3.new(0,0,0)
 local StuckTimer = 0
@@ -535,7 +588,6 @@ RunService.RenderStepped:Connect(function(dt)
         LockTarget, visualState = GetTarget(Center)
     end
 
-    -- ระบบ AI Bot เดินออโต้ พร้อมระบบป้องกันการเดินชนกำแพงแบบหายขาด (Ultimate Anti-Wall)
     if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         local autoTargetPart, autoState = GetClosestTargetAuto()
         local humanoid = LocalPlayer.Character.Humanoid
@@ -580,12 +632,10 @@ RunService.RenderStepped:Connect(function(dt)
             end
         end
 
-        -- ระบบเช็คว่าตัวละครติดแหง็กอยู่กับที่หรือไม่
         if (root.Position - LastPosition).Magnitude < 0.3 then
             StuckTimer = StuckTimer + dt
             if StuckTimer > 0.3 then
                 humanoid.Jump = true
-                -- ถ้าติดให้สุ่มพุ่งกระโดดฉีกออกด้านข้างทันทีเพื่อแก้ทางตัน
                 destinationPos = root.Position + Vector3.new(math.random(-40, 40), 0, math.random(-40, 40))
                 StuckTimer = 0
             end
@@ -594,7 +644,6 @@ RunService.RenderStepped:Connect(function(dt)
         end
         LastPosition = root.Position
 
-        -- ระบบ Multi-Raycast ตรวจจับสิ่งกีดขวางรอบตัวแบบ 360 องศาเพื่อเลี่ยงกำแพง
         if destinationPos then
             local moveDir = (destinationPos - root.Position)
             moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
@@ -605,7 +654,6 @@ RunService.RenderStepped:Connect(function(dt)
                 rayParams.FilterType = Enum.RaycastFilterType.Exclude
                 rayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
 
-                -- ยิงเรย์แคสต์ตรวจเช็ค 3 จุด (ตรงกลาง, เฉียงซ้าย, เฉียงขวา)
                 local checkDist = 6
                 local hitCenter = workspace:Raycast(root.Position, moveDir * checkDist, rayParams)
                 local leftDir = CFrame.Angles(0, math.rad(-45), 0) * moveDir
@@ -620,7 +668,6 @@ RunService.RenderStepped:Connect(function(dt)
                     elseif not hitRight then
                         moveDir = rightDir
                     else
-                        -- ถ้าตันหมด ให้หักเลี้ยวกลับหรือสุ่มทิศทางใหม่ทันที
                         moveDir = -moveDir
                     end
                 end

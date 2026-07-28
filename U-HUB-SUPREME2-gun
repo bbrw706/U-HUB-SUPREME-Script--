@@ -1,4 +1,4 @@
--- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION (FIXED MOBILE SHOOT) ]]
+-- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION (AI TOGGLE KEYBIND) ]]
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local TweenService = game:GetService("TweenService")
@@ -18,7 +18,7 @@ _G.U_HUB_CORE = {
     AutoFarmEnabled = false, 
     AutoLockNoClick = false, 
     AutoRespawnPlay = false,
-    RespawnDelay = 0.1,
+    RespawnDelay = 0.5,
     AimPart = "Head",
     Sensitivity = 0.05,
     AiSmoothness = 0.05,
@@ -89,21 +89,41 @@ UserInputService.InputChanged:Connect(function(input) if dragging and (input.Use
 -- [[ 4. TABS ]]
 local Tabs = { 
     Home = Window:AddTab({ Title = "หน้าแรก", Icon = "home" }),
-    QwenAI = Window:AddTab({ Title = "Qwen AI Bot", Icon = "bot" }),
+    QwenAI = Window:AddTab({ Title = "AI Bot", Icon = "bot" }),
     Combat = Window:AddTab({ Title = "Combat", Icon = "target" }), 
     Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
     ESP = Window:AddTab({ Title = "ESP", Icon = "ghost" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
+-- ฟังก์ชันกลางสำหรับยิงรีโมท Play แบบครอบคลุมทุกชื่อ
+local function FirePlayRemote()
+    pcall(function()
+        local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+        if remotes then
+            for _, remName in ipairs({"Command", "RemoteFunction", "RemoteEvent", "Event", "Function", "Play", "Spawn"}) do
+                local rem = remotes:FindFirstChild(remName)
+                if rem then
+                    if rem:IsA("RemoteEvent") then
+                        rem:FireServer("Play")
+                        rem:FireServer("Spawn")
+                    elseif rem.ClassName == "RemoteFunction" then
+                        pcall(function() rem:InvokeServer("Play") end)
+                    end
+                end
+            end
+        end
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer("Play")
+    end)
+end
+
 -- [[ HOME TAB ]]
 Tabs.Home:AddButton({
     Title = "🏠 กลับล็อบบี้",
     Description = "ส่งคำสั่งกลับไปยังหน้า Lobby ของเกม",
     Callback = function()
-        local args = { "Lobby" }
         pcall(function()
-            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer(unpack(args))
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer("Lobby")
         end)
     end
 })
@@ -112,23 +132,101 @@ Tabs.Home:AddButton({
     Title = "▶️ กดเล่น (Play)",
     Description = "ส่งคำสั่งเริ่มเล่นเกมทันที",
     Callback = function()
-        local args = { "Play" }
-        pcall(function()
-            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer(unpack(args))
-        end)
+        FirePlayRemote()
     end
 })
 
 Tabs.Home:AddToggle("AutoPlayDeath", {
-    Title = "🔄 เกิดอัตโนมัติเมื่อตาย",
-    Description = "ระบบยิงรีโมท Play อัตโนมัติเมื่อตัวละครตาย",
+    Title = "🔄 เกิดอัตโนมัติ",
+    Description = "ถ้ายังไม่เกิดโปรดรอ 4 วินาที",
     Default = false
 }):OnChanged(function(Value)
     _G.U_HUB_CORE.AutoRespawnPlay = Value
 end)
 
+Tabs.Home:AddButton({
+    Title = "🎲 สุ่มปืน (StandardGacha)",
+    Description = "กดเพื่อสุ่มปืน 1 ครั้งและแสดงผล",
+    Callback = function()
+        local args = {
+            "StandardGacha",
+            1
+        }
+        
+        -- พิมพ์บอกใน Console ว่ากำลังทำการสุ่มประเภทและจำนวนไหนอยู่
+        print("กำลังส่งคำขอสุ่มปืนประเภท: " .. args[1] .. " จำนวน: " .. args[2] .. " ครั้ง")
+        
+        local success, err = pcall(function()
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("RollCrate"):FireServer(unpack(args))
+        end)
+        
+        if success then
+            print("✨ สุ่มปืนสำเร็จ! (รอลุ้นรับไอเทมเข้ากระเป๋า)")
+        else
+            warn("❌ เกิดข้อผิดพลาดในการสุ่มปืน: " .. tostring(err))
+        end
+    end
+})
+
+-- 1. สร้างตัวแปรเก็บสถานะและความเร็วสำหรับการสุ่มออโต้
+local _G_AutoRoll = false
+local _G_RollDelay = 1 -- ค่าเริ่มต้น 1 วินาที
+
+-- 2. สร้าง Toggle (สวิทช์เปิด-ปิดการสุ่มออโต้)
+Tabs.Home:AddToggle("AutoRollToggle", {
+    Title = "🔄 เปิด/ปิด สุ่มปืนออโต้",
+    Description = "สุ่มปืนอัตโนมัติตามความเร็วที่ตั้งไว้",
+    Default = false,
+    Callback = function(State)
+        _G_AutoRoll = State
+        
+        if _G_AutoRoll then
+            print("▶️ เริ่มต้นระบบสุ่มปืนออโต้...")
+            
+            -- รันลูปแบบ Asynchronous (ไม่ให้เกมค้าง)
+            task.spawn(function()
+                while _G_AutoRoll do
+                    local args = {
+                        "StandardGacha",
+                        1
+                    }
+                    
+                    -- ทำการส่งคำขอสุ่มปืน
+                    local success, err = pcall(function()
+                        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("RollCrate"):FireServer(unpack(args))
+                    end)
+                    
+                    if success then
+                        print("✨ สุ่มปืนสำเร็จ 1 ครั้ง")
+                    else
+                        warn("❌ สุ่มปืนไม่สำเร็จ: " .. tostring(err))
+                    end
+                    
+                    -- หน่วงเวลาตามค่าที่ปรับใน Slider (แปลงเป็นตัวเลขเพื่อความปลอดภัย)
+                    task.wait(tonumber(_G_RollDelay) or 1)
+                end
+                print("⏹️ หยุดระบบสุ่มปืนออโต้แล้ว")
+            end)
+        end
+    end
+})
+
+-- 3. สร้าง Slider (แถบสไลด์ปรับความเร็ว)
+Tabs.Home:AddSlider("RollDelaySlider", {
+    Title = "⏱️ ความเร็วในการสุ่ม (วินาที)",
+    Description = "ปรับความเร็วของการสุ่มออโต้",
+    Default = 1,
+    Min = 0.1,
+    Max = 10,
+    Rounding = 1, -- กำหนดให้ทศนิยม 1 ตำแหน่ง (เช่น 0.1, 1.5, 10.0)
+    Callback = function(Value)
+        _G_RollDelay = Value
+        print("⚙️ เปลี่ยนความเร็วเป็น: " .. tostring(Value) .. " วินาที")
+    end
+})
+
 Tabs.Home:AddSlider("RespawnDelaySlider", {
-    Title = "⏱️ ความเร็วในการกดเกิด (วินาที)",
+    Title = "⏱️ ดีเลย์เริ่มต้นก่อนกดเกิด (วินาที)",
     Default = 0.1,
     Min = 0.1,
     Max = 5.0,
@@ -138,18 +236,63 @@ Tabs.Home:AddSlider("RespawnDelaySlider", {
     end
 })
 
+-- ระบบตรวจสอบและยิงรีโมท Play พร้อมระบบคูลดาวน์ 4 วินาทีซ้ำหากยังไม่ออก
 task.spawn(function()
+    local lastFireTick = 0
     while true do
         task.wait(0.2)
-        if _G.U_HUB_CORE.AutoRespawnPlay or _G.U_HUB_CORE.AutoFarmEnabled then
+        local isEnabled = _G.U_HUB_CORE.AutoRespawnPlay or _G.U_HUB_CORE.AutoFarmEnabled
+        if isEnabled then
             pcall(function()
                 local char = LocalPlayer.Character
-                if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then
-                    task.wait(_G.U_HUB_CORE.RespawnDelay)
-                    local args = { "Play" }
-                    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer(unpack(args))
+                local inLobbyOrDead = false
+                
+                if not char or not char:FindFirstChild("Humanoid") or not char:FindFirstChild("HumanoidRootPart") then
+                    inLobbyOrDead = true
+                else
+                    local humanoid = char.Humanoid
+                    local root = char.HumanoidRootPart
+                    if humanoid.Health <= 0 or root.Position.Y < -400 then
+                        inLobbyOrDead = true
+                    end
+                end
+
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui and not inLobbyOrDead then
+                    for _, gui in pairs(playerGui:GetChildren()) do
+                        if gui:IsA("ScreenGui") and gui.Enabled then
+                            local nameLower = gui.Name:lower()
+                            if nameLower:find("lobby") or nameLower:find("menu") or nameLower:find("spawn") or nameLower:find("main") or nameLower:find("home") or nameLower:find("team") then
+                                for _, descendant in pairs(gui:GetDescendants()) do
+                                    if descendant:IsA("TextButton") or descendant:IsA("ImageButton") then
+                                        local btnText = (descendant.Name .. (descendant:IsA("TextButton") and descendant.Text or "")):lower()
+                                        if btnText:find("play") or btnText:find("start") or btnText:find("spawn") or btnText:find("deploy") then
+                                            if descendant.Visible then
+                                                inLobbyOrDead = true
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if inLobbyOrDead then break end
+                    end
+                end
+
+                if inLobbyOrDead then
+                    local currentTick = tick()
+                    if currentTick - lastFireTick >= 4.0 then
+                        lastFireTick = currentTick
+                        task.wait(_G.U_HUB_CORE.RespawnDelay)
+                        FirePlayRemote()
+                    end
+                else
+                    lastFireTick = 0
                 end
             end)
+        else
+            lastFireTick = 0
         end
     end
 end)
@@ -157,6 +300,7 @@ end)
 -- [[ QWEN AI BOT TAB ]]
 Tabs.QwenAI:AddInput("GroqApiKeyInput", {
     Title = "🔑 วาง Groq API Key ตรงนี้",
+    Description = "ถ้ามี api bot จะฉลาดขึ้นมาก",
     Default = "",
     Placeholder = "gsk_...",
     Numeric = false,
@@ -166,12 +310,25 @@ Tabs.QwenAI:AddInput("GroqApiKeyInput", {
     end
 })
 
-Tabs.QwenAI:AddToggle("AutoFarmToggle", {
-    Title = "เปิดระบบ Qwen AI Bot (ออโต้ฟาร์ม/เดินยิง + เกิด 0.1 วิ)", 
+local AutoFarmToggleObj = Tabs.QwenAI:AddToggle("AutoFarmToggle", {
+    Title = "เปิดระบบ AI Bot", 
+    Description = "ออโต้เกิด+ฟาร์ม",
     Default = false
-}):OnChanged(function(Value) 
+})
+
+AutoFarmToggleObj:OnChanged(function(Value) 
     _G.U_HUB_CORE.AutoFarmEnabled = Value 
 end)
+
+Tabs.QwenAI:AddKeybind("AiKeybindToggle", {
+    Title = "ตั้งค่าปุ่มคีย์บอร์ดเปิด/ปิด AI Bot",
+    Default = "K",
+    Mode = "Toggle",
+    Callback = function(Value)
+        _G.U_HUB_CORE.AutoFarmEnabled = not _G.U_HUB_CORE.AutoFarmEnabled
+        AutoFarmToggleObj:SetValue(_G.U_HUB_CORE.AutoFarmEnabled)
+    end
+})
 
 Tabs.QwenAI:AddDropdown("AiTargetModeDrop", {
     Title = "โหมดการล็อกเป้าของ AI",
@@ -211,7 +368,7 @@ Tabs.Combat:AddDropdown("AimPartDropdown", { Title = "เลือกจุด�
 Tabs.Combat:AddDropdown("MouseSpecial", { Title = "โหมดความโหด", Values = {"Normal (ระยะสายตา)", "Hardcore (ล็อคโหด)"}, Default = "Normal (ระยะสายตา)", Callback = function(Value) _G.U_HUB_CORE.LockMode = Value end })
 
 -- [[ VISUALS ]]
-Tabs.Visuals:AddToggle("ShowFovBtn", {Title = "แสดงวงกลม POV", Default = false}):OnChanged(function(Value) _G.U_HUB_CORE.FovEnabled = Value end)
+Tabs.Visuals:AddToggle("ShowFovBtn", {Title = "แสดงวงกลม POV", Default = true}):OnChanged(function(Value) _G.U_HUB_CORE.FovEnabled = Value end)
 Tabs.Visuals:AddSlider("FOVSize", { Title = "POV Radius", Default = 150, Min = 50, Max = 800, Rounding = 0, Callback = function(Value) _G.U_HUB_CORE.FovRadius = Value end})
 Tabs.Visuals:AddColorpicker("POVColor", {Title = "POV Color", Default = Color3.fromRGB(255, 255, 255)}):OnChanged(function(Value) _G.U_HUB_CORE.PovColor = Value end)
 
@@ -349,6 +506,8 @@ Tabs.Settings:AddButton({
 
 Tabs.Settings:AddButton({ Title = "ลบ เมนู", Callback = function() Window:Destroy(); ScreenGui:Destroy(); if _G.FOV_Gui then _G.FOV_Gui:Destroy() end end })
 
+
+
 -- [[ 5. QWEN AI BRAIN & DECISION ENGINE ]]
 local CurrentTactic = "CHARGE"
 local IsRequestingAI = false
@@ -412,7 +571,6 @@ Respond ONLY with JSON: {"tactic": "CHOSEN_TACTIC"}
     end)
 end
 
--- [ FIXED MOBILE CLICK / SHOOT FUNCTION ]
 local function SafeHumanClick()
     pcall(function()
         local character = LocalPlayer.Character
@@ -420,6 +578,9 @@ local function SafeHumanClick()
             local tool = character:FindFirstChildOfClass("Tool")
             if tool then
                 tool:Activate()
+                task.delay(0.02, function()
+                    pcall(function() tool:Activate() end)
+                end)
             end
         end
     end)
@@ -428,7 +589,7 @@ local function SafeHumanClick()
     elseif mouse1press and mouse1release then
         pcall(function()
             mouse1press()
-            task.delay(0.05, function()
+            task.delay(0.04, function()
                 pcall(mouse1release)
             end)
         end)
@@ -611,7 +772,7 @@ RunService.RenderStepped:Connect(function(dt)
             visualState = autoState
 
             if autoState and autoState.hasLineOfSight then
-                local randomDelay = math.random(25, 45) / 100
+                local randomDelay = math.random(15, 30) / 100
                 if tick() - LastShootTime > randomDelay then
                     LastShootTime = tick()
                     SafeHumanClick()

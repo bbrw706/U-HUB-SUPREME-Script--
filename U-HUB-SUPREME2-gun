@@ -341,7 +341,7 @@ Tabs.QwenAI:AddDropdown("AiTargetModeDrop", {
 
 Tabs.QwenAI:AddSlider("AiSmoothSlider", {
     Title = "ความเร็วในการล็อกเป้าของ AI",
-    Default = 0.05,
+    Default = 0.5,
     Min = 0.01,
     Max = 1,
     Rounding = 2,

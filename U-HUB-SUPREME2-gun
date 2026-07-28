@@ -1,4 +1,4 @@
--- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION (FINAL ERROR FIXED) ]]
+-- [[ U-HUB SUPREME + QWEN AI INTEGRATED EDITION (FIXED MOBILE SHOOT) ]]
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local TweenService = game:GetService("TweenService")
@@ -412,15 +412,26 @@ Respond ONLY with JSON: {"tactic": "CHOSEN_TACTIC"}
     end)
 end
 
+-- [ FIXED MOBILE CLICK / SHOOT FUNCTION ]
 local function SafeHumanClick()
+    pcall(function()
+        local character = LocalPlayer.Character
+        if character then
+            local tool = character:FindFirstChildOfClass("Tool")
+            if tool then
+                tool:Activate()
+            end
+        end
+    end)
     if mouse1click then
-        mouse1click()
+        pcall(mouse1click)
     elseif mouse1press and mouse1release then
-        mouse1press()
-        task.delay(math.random(3, 7) / 100, function() mouse1release() end)
-    else
-        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if tool then tool:Activate() end
+        pcall(function()
+            mouse1press()
+            task.delay(0.05, function()
+                pcall(mouse1release)
+            end)
+        end)
     end
 end
 

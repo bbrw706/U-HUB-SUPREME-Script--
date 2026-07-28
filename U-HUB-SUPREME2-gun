@@ -12,6 +12,8 @@ math.randomseed(tick())
 
 local CurrentSize = UDim2.fromOffset(580, 460)
 
+
+
 -- [[ 1. SETTINGS CORE ]]
 _G.U_HUB_CORE = {
     GroqApiKey = "", 
@@ -341,7 +343,7 @@ Tabs.QwenAI:AddDropdown("AiTargetModeDrop", {
 
 Tabs.QwenAI:AddSlider("AiSmoothSlider", {
     Title = "ความเร็วในการล็อกเป้าของ AI",
-    Default = 0.5,
+    Default = 0.45,
     Min = 0.01,
     Max = 1,
     Rounding = 2,
@@ -353,13 +355,15 @@ Tabs.QwenAI:AddSlider("AiSmoothSlider", {
 Tabs.QwenAI:AddSlider("AiWalkRadiusSlider", {
     Title = "รัศมีการเดินของ AI",
     Default = 100,
-    Min = 100,
+    Min = 5000,
     Max = 10000,
     Rounding = 0,
     Callback = function(Value)
         _G.U_HUB_CORE.AiWalkRadius = Value
     end
 })
+
+
 
 -- [[ COMBAT ]]
 Tabs.Combat:AddToggle("AutoLock", {Title = "ล็อคเป้า (เมื่อเปิด จะล็อคเข้ากลางจอทันที)", Default = false}):OnChanged(function(Value) _G.U_HUB_CORE.AutoLockNoClick = Value end)
@@ -572,6 +576,7 @@ Respond ONLY with JSON: {"tactic": "CHOSEN_TACTIC"}
 end
 
 local function SafeHumanClick()
+    -- 1. สั่งเปิดใช้งาน Tool (ถือปืนแล้วยิง) ตามปกติเหมือนระบบคอมพิวเตอร์
     pcall(function()
         local character = LocalPlayer.Character
         if character then
@@ -584,15 +589,40 @@ local function SafeHumanClick()
             end
         end
     end)
+    
+    -- 2. จำลองการคลิก/สัมผัสหน้าจอสำหรับมือถือ (Mobile Touch Simulation)
+    pcall(function()
+        if VirtualInputManager then
+            local screenSize = Camera.ViewportSize
+            local x, y = screenSize.X / 2, screenSize.Y / 2
+            local touchId = 1 -- กำหนดไอดีการสัมผัสหน้าจอ
+            
+            -- จำลองการใช้นิ้วจิ้มลงไปที่กลางจอ (ตำแหน่งเป้าเล็ง)
+            VirtualInputManager:SendTouchEvent(touchId, Enum.UserInputState.Begin, x, y, game)
+            
+            -- หน่วงเวลาเล็กน้อยแล้วปล่อยนิ้ว เหมือนคนกดคลิกจริงๆ
+            task.delay(0.04, function()
+                pcall(function()
+                    VirtualInputManager:SendTouchEvent(touchId, Enum.UserInputState.End, x, y, game)
+                end)
+            end)
+        end
+    end)
+
+    -- 3. เผื่อกรณีรันบนโปรแกรมจำลองคอมพิวเตอร์ (PC Emulator)
+    pcall(function()
+        if VirtualInputManager and not UserInputService.TouchEnabled then
+            local screenSize = Camera.ViewportSize
+            local x, y = screenSize.X / 2, screenSize.Y / 2
+            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+            task.delay(0.04, function()
+                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+            end)
+        end
+    end)
+
     if mouse1click then
         pcall(mouse1click)
-    elseif mouse1press and mouse1release then
-        pcall(function()
-            mouse1press()
-            task.delay(0.04, function()
-                pcall(mouse1release)
-            end)
-        end)
     end
 end
 
@@ -746,7 +776,7 @@ RunService.RenderStepped:Connect(function(dt)
     local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
     if _G.FOV_CircleFrame then
-        local isLockActive = _G.U_HUB_CORE.AutoLockNoClick or _G.U_HUB_CORE.AutoFarmEnabled
+        local isLockActive = _G.U_HUB_CORE.AutoLockNoClick
         _G.FOV_CircleFrame.Visible = _G.U_HUB_CORE.FovEnabled and isLockActive
         _G.FOV_CircleFrame.Size = UDim2.fromOffset(_G.U_HUB_CORE.FovRadius * 2, _G.U_HUB_CORE.FovRadius * 2)
         _G.FOV_CircleFrame.Position = UDim2.fromOffset(Center.X, Center.Y)

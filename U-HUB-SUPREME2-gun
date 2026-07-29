@@ -12,7 +12,48 @@ math.randomseed(tick())
 
 local CurrentSize = UDim2.fromOffset(580, 460)
 
+local function GetClosestTargetAuto()
+    local targetPart = nil
+    local shortestDist = math.huge
+    local visualState = nil
+    
 
+    for _, v in pairs(Players:GetPlayers()) do
+        local isWL = false
+        local playerName = v.Name
+        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == playerName then isWL = true; break end end
+        if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
+            local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
+            if Part and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local Mag = (LocalPlayer.Character.HumanoidRootPart.Position - Part.Position).Magnitude
+                if Mag <= _G.U_HUB_CORE.MaxLockDistance then
+                    local RayParams = RaycastParams.new()
+                    RayParams.FilterType = Enum.RaycastFilterType.Exclude
+                    RayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+                    local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
+
+                    local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
+                    local mode = _G.U_HUB_CORE.AiTargetMode
+
+                    if mode == "ล็อกโหด (ทะลุกำแพง)" or hasLoS then
+                        if Mag < shortestDist then
+                            shortestDist = Mag
+                            targetPart = Part
+                            local Pos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+                            visualState = {
+                                myHealth = LocalPlayer.Character.Humanoid.Health,
+                                targetDistance = math.floor(Mag),
+                                targetOnScreen = OnScreen,
+                                hasLineOfSight = hasLoS
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return targetPart, visualState
+end
 
 -- [[ 1. SETTINGS CORE ]]
 _G.U_HUB_CORE = {
@@ -122,7 +163,7 @@ end
 -- [[ HOME TAB ]]
 Tabs.Home:AddButton({
     Title = "🏠 กลับล็อบบี้",
-    Description = "ส่งคำสั่งกลับไปยังหน้า Lobby ของเกม",
+    Description = "ส่งคำสั่งกลับไปยังหน้า Lobby ของเกมหรือกด N",
     Callback = function()
         pcall(function()
             game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer("Lobby")
@@ -132,7 +173,7 @@ Tabs.Home:AddButton({
 
 Tabs.Home:AddButton({
     Title = "▶️ กดเล่น (Play)",
-    Description = "ส่งคำสั่งเริ่มเล่นเกมทันที",
+    Description = "ส่งคำสั่งเริ่มเล่นเกมทันทีหรือกด P",
     Callback = function()
         FirePlayRemote()
     end
@@ -575,56 +616,81 @@ Respond ONLY with JSON: {"tactic": "CHOSEN_TACTIC"}
     end)
 end
 
+local LastShootTime = 0
+local HasLockedAndWaiting = false
+local LockTimer = 0
+
+-- ฟังก์ชันคลิกซ้ายสั่งยิงจริง 100% ทั้งคอมและมือถือ
 local function SafeHumanClick()
-    -- 1. สั่งเปิดใช้งาน Tool (ถือปืนแล้วยิง) ตามปกติเหมือนระบบคอมพิวเตอร์
     pcall(function()
         local character = LocalPlayer.Character
         if character then
             local tool = character:FindFirstChildOfClass("Tool")
             if tool then
                 tool:Activate()
-                task.delay(0.02, function()
-                    pcall(function() tool:Activate() end)
-                end)
             end
         end
     end)
     
-    -- 2. จำลองการคลิก/สัมผัสหน้าจอสำหรับมือถือ (Mobile Touch Simulation)
-    pcall(function()
-        if VirtualInputManager then
-            local screenSize = Camera.ViewportSize
-            local x, y = screenSize.X / 2, screenSize.Y / 2
-            local touchId = 1 -- กำหนดไอดีการสัมผัสหน้าจอ
-            
-            -- จำลองการใช้นิ้วจิ้มลงไปที่กลางจอ (ตำแหน่งเป้าเล็ง)
-            VirtualInputManager:SendTouchEvent(touchId, Enum.UserInputState.Begin, x, y, game)
-            
-            -- หน่วงเวลาเล็กน้อยแล้วปล่อยนิ้ว เหมือนคนกดคลิกจริงๆ
-            task.delay(0.04, function()
-                pcall(function()
-                    VirtualInputManager:SendTouchEvent(touchId, Enum.UserInputState.End, x, y, game)
-                end)
-            end)
-        end
-    end)
-
-    -- 3. เผื่อกรณีรันบนโปรแกรมจำลองคอมพิวเตอร์ (PC Emulator)
-    pcall(function()
-        if VirtualInputManager and not UserInputService.TouchEnabled then
-            local screenSize = Camera.ViewportSize
-            local x, y = screenSize.X / 2, screenSize.Y / 2
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-            task.delay(0.04, function()
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-            end)
-        end
-    end)
-
     if mouse1click then
         pcall(mouse1click)
     end
 end
+
+-- ระบบเช็คการล็อกและคูลดาวน์ 0.1 วิ ก่อนยิง
+RunService.RenderStepped:Connect(function(dt)
+    local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local LockTarget = nil
+
+    if _G.U_HUB_CORE.AutoLockNoClick then
+        LockTarget, _ = GetTarget(Center)
+    end
+
+    if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local autoTargetPart, _ = GetClosestTargetAuto()
+        if autoTargetPart then
+            LockTarget = autoTargetPart
+        end
+    end
+
+    if LockTarget then
+        local jitter = Vector3.new(math.random(-10, 10)/100, math.random(-10, 10)/100, 0)
+        local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
+        local currentSens = _G.U_HUB_CORE.AutoFarmEnabled and _G.U_HUB_CORE.AiSmoothness or _G.U_HUB_CORE.Sensitivity
+        
+        -- ให้กล้องเคลื่อนไปหากลางเป้า (จำลองการเล็ง)
+        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
+
+        -- เช็คว่ามุมมองกล้องหันไปตรงกับเป้าหมายแล้วหรือยัง (ความห่างน้อยมากๆ ถือว่าล็อกติด 100%)
+        local _, onScreen = Camera:WorldToViewportPoint(LockTarget.Position)
+        if onScreen then
+            local screenPos = Camera:WorldToViewportPoint(LockTarget.Position)
+            local distanceToCenter = (Vector2.new(screenPos.X, screenPos.Y) - Center).Magnitude
+
+            -- ถ้าเป้าเล็งอยู่ใกล้กลางจอสุดๆ (< 15 พิกเซล แปลว่าล็อกติดแล้ว)
+            if distanceToCenter < 15 then
+                if not HasLockedAndWaiting then
+                    HasLockedAndWaiting = true
+                    LockTimer = tick() -- เริ่มจับเวลาคูลดาวน์
+                else
+                    -- เมื่อผ่านไปครบ 0.1 วินาทีหลังล็อกติด ให้ยิงทันที
+                    if tick() - LockTimer >= 0.2 then
+                        if tick() - LastShootTime > 0.15 then
+                            LastShootTime = tick()
+                            SafeHumanClick()
+                        end
+                    end
+                end
+            else
+                HasLockedAndWaiting = false
+            end
+        else
+            HasLockedAndWaiting = false
+        end
+    else
+        HasLockedAndWaiting = false
+    end
+end)
 
 if not _G.FOV_Gui then
     local fovHolder = Instance.new("ScreenGui", game.CoreGui)
@@ -647,47 +713,7 @@ if not _G.FOV_Gui then
     _G.FOV_Stroke = uiStroke
 end
 
-local function GetClosestTargetAuto()
-    local targetPart = nil
-    local shortestDist = math.huge
-    local visualState = nil
 
-    for _, v in pairs(Players:GetPlayers()) do
-        local isWL = false
-        local playerName = v.Name
-        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == playerName then isWL = true; break end end
-        if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
-            local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
-            if Part and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local Mag = (LocalPlayer.Character.HumanoidRootPart.Position - Part.Position).Magnitude
-                if Mag <= _G.U_HUB_CORE.MaxLockDistance then
-                    local RayParams = RaycastParams.new()
-                    RayParams.FilterType = Enum.RaycastFilterType.Exclude
-                    RayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
-                    local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
-
-                    local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
-                    local mode = _G.U_HUB_CORE.AiTargetMode
-
-                    if mode == "ล็อกโหด (ทะลุกำแพง)" or hasLoS then
-                        if Mag < shortestDist then
-                            shortestDist = Mag
-                            targetPart = Part
-                            local Pos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
-                            visualState = {
-                                myHealth = LocalPlayer.Character.Humanoid.Health,
-                                targetDistance = math.floor(Mag),
-                                targetOnScreen = OnScreen,
-                                hasLineOfSight = hasLoS
-                            }
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return targetPart, visualState
-end
 
 local function GetAnyPlayerToHunt()
     local bestPart = nil
@@ -791,94 +817,200 @@ RunService.RenderStepped:Connect(function(dt)
     end
 
     if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local autoTargetPart, autoState = GetClosestTargetAuto()
-        local humanoid = LocalPlayer.Character.Humanoid
-        local root = LocalPlayer.Character.HumanoidRootPart
+    local autoTargetPart, autoState = GetClosestTargetAuto()
+    local humanoid = LocalPlayer.Character.Humanoid
+    local root = LocalPlayer.Character.HumanoidRootPart
 
-        local destinationPos = nil
+    local destinationPos = nil
 
-        if autoTargetPart then
-            LockTarget = autoTargetPart
-            visualState = autoState
+    -- ตัวแปรจัดการสถานการณ์โดนประกบหน้าหลัง (Crossfire State)
+    _G.CrossfireState = _G.CrossfireState or { Mode = "Normal", Timer = 0, RearTarget = nil, LockWaitTimer = 0, IsLockedAndWaiting = false }
 
-            if autoState and autoState.hasLineOfSight then
-                local randomDelay = math.random(15, 30) / 100
-                if tick() - LastShootTime > randomDelay then
-                    LastShootTime = tick()
-                    SafeHumanClick()
+    if autoTargetPart then
+        LockTarget = autoTargetPart
+        visualState = autoState
+
+        local targetRoot = autoTargetPart.Parent:FindFirstChild("HumanoidRootPart") or autoTargetPart
+        
+        -- ตรวจเช็คว่ามีผู้เล่นแอบอยู่ข้างหลังเราด้วยหรือไม่
+        local behindTarget = nil
+        pcall(function()
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    local pRoot = player.Character.HumanoidRootPart
+                    local relPos = root.CFrame:PointToObjectSpace(pRoot.Position)
+                    if relPos.Z < -5 and relPos.Magnitude < 35 then
+                        behindTarget = pRoot
+                        break
+                    end
                 end
             end
+        end)
 
-            local targetRoot = autoTargetPart.Parent:FindFirstChild("HumanoidRootPart") or autoTargetPart
+        if behindTarget and _G.CrossfireState.Mode == "Normal" then
+            _G.CrossfireState.Mode = "Confused"
+            _G.CrossfireState.Timer = tick()
+            _G.CrossfireState.RearTarget = behindTarget
+            _G.CrossfireState.IsLockedAndWaiting = false
+        end
+
+        if _G.CrossfireState.Mode == "Confused" then
+            -- เงื่อนไขยิงตัวหน้าหลังเจอคนประกบ (หน่วง 0.2 วิหลังล็อก)
+            if autoState and autoState.hasLineOfSight then
+                if not _G.CrossfireState.IsLockedAndWaiting then
+                    _G.CrossfireState.IsLockedAndWaiting = true
+                    _G.CrossfireState.LockWaitTimer = tick()
+                else
+                    if tick() - _G.CrossfireState.LockWaitTimer >= 0.2 then
+                        if tick() - LastShootTime > 0.08 then
+                            LastShootTime = tick()
+                            SafeHumanClick()
+                        end
+                    end
+                end
+            else
+                _G.CrossfireState.IsLockedAndWaiting = false
+            end
+
+            if tick() - _G.CrossfireState.Timer >= 0.5 then
+                _G.CrossfireState.Mode = "AttackRear"
+                _G.CrossfireState.Timer = tick()
+                _G.CrossfireState.IsLockedAndWaiting = false
+            else
+                destinationPos = root.Position + Vector3.new(math.random(-15, 15), 0, math.random(-15, 15))
+                humanoid.Jump = false -- ไม่กระโดดตอนเดินเอ๋อ
+            end
+        elseif _G.CrossfireState.Mode == "AttackRear" then
+            if _G.CrossfireState.RearTarget and _G.CrossfireState.RearTarget.Parent then
+                LockTarget = _G.CrossfireState.RearTarget
+                destinationPos = _G.CrossfireState.RearTarget.Position
+                
+                if not _G.CrossfireState.IsLockedAndWaiting then
+                    _G.CrossfireState.IsLockedAndWaiting = true
+                    _G.CrossfireState.LockWaitTimer = tick()
+                else
+                    if tick() - _G.CrossfireState.LockWaitTimer >= 0.2 then
+                        if tick() - LastShootTime > 0.08 then
+                            LastShootTime = tick()
+                            SafeHumanClick()
+                        end
+                    end
+                end
+            else
+                _G.CrossfireState.Mode = "Normal"
+            end
+
+            if tick() - _G.CrossfireState.Timer > 1.2 then
+                _G.CrossfireState.Mode = "Normal"
+            end
+        else
+            -- สถานการณ์ปกติ: เมื่อเจอผู้เล่น ให้ล็อกเป้าแล้วรอ 0.2 วิ ค่อยยิง
+            local distanceToTarget = (targetRoot.Position - root.Position).Magnitude
+            local healthPercent = humanoid.Health / humanoid.MaxHealth
+            
+            if healthPercent < 0.3 then
+                CurrentTactic = "RETREAT"
+            elseif distanceToTarget < 15 then
+                CurrentTactic = "JUMP_SHOOT"
+            elseif distanceToTarget > 40 then
+                CurrentTactic = "FLANK"
+            end
+
+            if autoState and autoState.hasLineOfSight then
+                if not _G.CrossfireState.IsLockedAndWaiting then
+                    _G.CrossfireState.IsLockedAndWaiting = true
+                    _G.CrossfireState.LockWaitTimer = tick() -- เริ่มจับเวลา 0.2 วิเมื่อล็อกเป้าติด
+                else
+                    -- ครบ 0.2 วิหลังล็อกเป้า ถึงจะเหนี่ยวไกยิง
+                    if tick() - _G.CrossfireState.LockWaitTimer >= 0.2 then
+                        if tick() - LastShootTime > 0.1 then
+                            LastShootTime = tick()
+                            SafeHumanClick()
+                        end
+                    end
+                end
+            else
+                _G.CrossfireState.IsLockedAndWaiting = false
+            end
+
             destinationPos = targetRoot.Position
             local currentRadius = math.clamp(_G.U_HUB_CORE.AiWalkRadius, 5, 50)
 
             if CurrentTactic == "FLANK" then
-                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * currentRadius)
+                local tacticalWave = math.sin(tick() * 6) * 15
+                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * currentRadius) + (targetRoot.CFrame.LookVector * tacticalWave)
             elseif CurrentTactic == "JUMP_SHOOT" then
-                if math.random(1, 25) == 1 and humanoid.FloorMaterial ~= Enum.Material.Air then
+                if math.random(1, 15) == 1 and humanoid.FloorMaterial ~= Enum.Material.Air then
                     humanoid.Jump = true
                 end
-                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * (math.random(-1, 1) * 12))
+                local randomStrafe = (math.random(1, 2) == 1 and 1 or -1) * math.random(12, 22)
+                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * randomStrafe)
             elseif CurrentTactic == "RETREAT" then
-                destinationPos = root.Position + (root.Position - targetRoot.Position).Unit * 25
-            end
-        else
-            local huntTarget = GetAnyPlayerToHunt()
-            if huntTarget then
-                destinationPos = huntTarget.Position
-            else
-                RoamAngle = RoamAngle + 1.2 * dt
-                local offset = Vector3.new(math.cos(RoamAngle) * 40, 0, math.sin(RoamAngle) * 40)
-                destinationPos = root.Position + offset
+                destinationPos = root.Position + (root.Position - targetRoot.Position).Unit * 35 + Vector3.new(math.random(-20, 20), 0, math.random(-20, 20))
             end
         end
-
-        if (root.Position - LastPosition).Magnitude < 0.3 then
-            StuckTimer = StuckTimer + dt
-            if StuckTimer > 0.3 then
-                humanoid.Jump = true
-                destinationPos = root.Position + Vector3.new(math.random(-40, 40), 0, math.random(-40, 40))
-                StuckTimer = 0
-            end
+    else
+        _G.CrossfireState.Mode = "Normal"
+        _G.CrossfireState.IsLockedAndWaiting = false
+        
+        -- เมื่อไม่เจอใคร ให้เดินสำรวจแผนที่เพื่อหาผู้เล่นทั่วแมพทันที (ไม่มีการกระโดดอยู่เฉยๆ)
+        local huntTarget = GetAnyPlayerToHunt()
+        if huntTarget then
+            destinationPos = huntTarget.Position
         else
-            StuckTimer = 0
-        end
-        LastPosition = root.Position
-
-        if destinationPos then
-            local moveDir = (destinationPos - root.Position)
-            moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
-            
-            if moveDir.Magnitude > 0.1 then
-                moveDir = moveDir.Unit
-                local rayParams = RaycastParams.new()
-                rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                rayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
-
-                local checkDist = 6
-                local hitCenter = workspace:Raycast(root.Position, moveDir * checkDist, rayParams)
-                local leftDir = CFrame.Angles(0, math.rad(-45), 0) * moveDir
-                local hitLeft = workspace:Raycast(root.Position, leftDir * checkDist, rayParams)
-                local rightDir = CFrame.Angles(0, math.rad(45), 0) * moveDir
-                local hitRight = workspace:Raycast(root.Position, rightDir * checkDist, rayParams)
-
-                if hitCenter then
-                    humanoid.Jump = true
-                    if not hitLeft then
-                        moveDir = leftDir
-                    elseif not hitRight then
-                        moveDir = rightDir
-                    else
-                        moveDir = -moveDir
-                    end
-                end
-
-                SmoothVelocity = SmoothVelocity:Lerp(moveDir * humanoid.WalkSpeed, 0.2)
-                humanoid:Move(SmoothVelocity.Unit * math.min(SmoothVelocity.Magnitude, humanoid.WalkSpeed), false)
-            end
+            RoamAngle = RoamAngle + 0.5 * dt
+            local mapScanRadius = 500
+            local offset = Vector3.new(math.cos(RoamAngle) * mapScanRadius, 0, math.sin(RoamAngle) * mapScanRadius)
+            destinationPos = root.Position + offset
         end
     end
+    -- ระบบแก้ติดสิ่งกีดขวาง (เฉพาะตอนติดทางตันจริงๆ ถึงจะกระโดดข้าม)
+    if (root.Position - LastPosition).Magnitude < 0.2 then
+        StuckTimer = StuckTimer + dt
+        if StuckTimer > 0.3 then
+            humanoid.Jump = true
+            destinationPos = root.Position + Vector3.new(math.random(-50, 50), 0, math.random(-50, 50))
+            StuckTimer = 0
+        end
+    else
+        StuckTimer = 0
+    end
+    LastPosition = root.Position
+
+    -- ควบคุมการเคลื่อนที่และเรดาร์หลบกำแพง
+    if destinationPos then
+        local moveDir = (destinationPos - root.Position)
+        moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
+        
+        if moveDir.Magnitude > 0.1 then
+            moveDir = moveDir.Unit
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            rayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+
+            local checkDist = 8
+            local hitCenter = workspace:Raycast(root.Position, moveDir * checkDist, rayParams)
+            local leftDir = CFrame.Angles(0, math.rad(-55), 0) * moveDir
+            local hitLeft = workspace:Raycast(root.Position, leftDir * checkDist, rayParams)
+            local rightDir = CFrame.Angles(0, math.rad(55), 0) * moveDir
+            local hitRight = workspace:Raycast(root.Position, rightDir * checkDist, rayParams)
+
+            if hitCenter then
+                humanoid.Jump = true
+                if not hitLeft then
+                    moveDir = leftDir
+                elseif not hitRight then
+                    moveDir = rightDir
+                else
+                    moveDir = -moveDir
+                end
+            end
+
+            SmoothVelocity = SmoothVelocity:Lerp(moveDir * humanoid.WalkSpeed, 0.22)
+            humanoid:Move(SmoothVelocity.Unit * math.min(SmoothVelocity.Magnitude, humanoid.WalkSpeed), false)
+        end
+    end
+end
 
     if LockTarget then
         local jitter = Vector3.new(math.random(-10, 10)/100, math.random(-10, 10)/100, 0)
@@ -919,3 +1051,25 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 end)
+
+-- [[ ระบบปุ่มลัด: P = กดเล่น / N = กลับล็อบบี้ ]]
+local UserInputService = game:GetService("UserInputService")
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    -- กดปุ่ม P เพื่อกดเล่น (Play)
+    if input.KeyCode == Enum.KeyCode.P then
+        pcall(function()
+            FirePlayRemote()
+        end)
+    end
+
+    -- กดปุ่ม N เพื่อกลับล็อบบี้ (เปลี่ยนจาก M เป็น N)
+    if input.KeyCode == Enum.KeyCode.N then
+        pcall(function()
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer("Lobby")
+        end)
+    end
+end)
+

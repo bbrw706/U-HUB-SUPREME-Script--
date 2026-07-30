@@ -398,7 +398,16 @@ local function GetAdvancedSmartTarget()
                     
                     if humanoid and humanoid.Health > 0 and rootPart then
                         local aimPartName = _G.U_HUB_CORE.AimPart or "Head"
-                        local Part = char:FindFirstChild(aimPartName) or char:FindFirstChild("Head") or rootPart
+if _G.U_HUB_CORE.AiTargetMode == "สุ่มล็อกเป้า" then
+    local randomRoll = math.random(1, 100)
+    if randomRoll <= 60 then
+        aimPartName = "Head"
+    else
+        aimPartName = "HumanoidRootPart"
+    end
+end
+
+local Part = char:FindFirstChild(aimPartName) or char:FindFirstChild("Head") or rootPart
                         
                         if Part then
                             local Mag = (myRoot.Position - Part.Position).Magnitude
@@ -480,8 +489,8 @@ local function GetRoamingHuntTarget()
 end
 
 local FollowClosestToggleObj = Tabs.QwenAI:AddToggle("FollowClosestToggle", {
-    Title = "🧠 ซุปเปอร์ AI เดินอัจฉริยะ (Clean Console)",
-    Description = "เดินหาคนเอง หลบกำแพง และซ่อน Error กวนใจตอนตาย",
+    Title = "🧠 ซุปเปอร์ BOT เดินอัจฉริยะ (Clean Console)",
+    Description = "เดินหาคนเอง หลบกำแพง เล่นเหมือนคนจริงๆ",
     Default = false
 })
 
@@ -709,12 +718,14 @@ Tabs.QwenAI:AddKeybind("AiKeybindToggle", {
 
 Tabs.QwenAI:AddDropdown("AiTargetModeDrop", {
     Title = "โหมดการล็อกเป้าของ AI",
-    Values = {"ล็อกปกติ (เจอตัวก่อนค่อยล็อก)", "ล็อกโหด (ทะลุกำแพง)"},
+    Values = {"ล็อกปกติ (เจอตัวก่อนค่อยล็อก)", "ล็อกโหด (ทะลุกำแพง)", "สุ่มล็อกเป้าจะสุ่มล็อกหัวและตัว"},
     Default = "ล็อกปกติ (เจอตัวก่อนค่อยล็อก)",
     Callback = function(Value)
         _G.U_HUB_CORE.AiTargetMode = Value
     end
 })
+
+
 
 Tabs.QwenAI:AddSlider("AiSmoothSlider", {
     Title = "ความเร็วในการล็อกเป้าของ AI",
@@ -1130,6 +1141,91 @@ local LastPosition = Vector3.new(0,0,0)
 local StuckTimer = 0
 local RoamAngle = 0
 local SmoothVelocity = Vector3.new(0,0,0)
+local UserInputService = game:GetService("UserInputService")
+
+-- [[ 5. QWEN AI BRAIN & DECISION ENGINE ]]
+local CurrentTactic = "CHARGE"
+local IsRequestingAI = false
+
+local function AskQwenAI(visualSceneState)
+    local apiKey = _G.U_HUB_CORE.GroqApiKey
+    if apiKey == "" or apiKey == nil or IsRequestingAI then return end
+    IsRequestingAI = true
+
+    task.spawn(function()
+        local httpReq = (syn and syn.request) or (http and http.request) or request or HttpService.RequestAsync
+        if not httpReq then IsRequestingAI = false; return end
+
+        local url = "https://api.groq.com/openai/v1/chat/completions"
+        local headers = {
+            ["Authorization"] = "Bearer " .. apiKey,
+            ["Content-Type"] = "application/json"
+        }
+
+        local promptSystem = [[
+You are an advanced stealthy FPS Gamer AI.
+Analyze distance and visibility, choose tactical behavior:
+- "CHARGE" (Standard push)
+- "FLANK" (Side movement)
+- "JUMP_SHOOT" (Tactical hop)
+- "RETREAT" (Low health fallback)
+
+Respond ONLY with JSON: {"tactic": "CHOSEN_TACTIC"}
+]]
+
+        local bodyData = {
+            model = "qwen-2.5-72b-instruct",
+            messages = {
+                { role = "system", content = promptSystem },
+                { role = "user", content = HttpService:JSONEncode(visualSceneState) }
+            },
+            temperature = 0.2,
+            response_format = { type = "json_object" }
+        }
+
+        local success, response = pcall(function()
+            return httpReq({
+                Url = url,
+                Method = "POST",
+                Headers = headers,
+                Body = HttpService:JSONEncode(bodyData)
+            })
+        end)
+
+        if success and response and response.StatusCode == 200 then
+            local data = HttpService:JSONDecode(response.Body)
+            if data and data.choices and data.choices[1] then
+                local aiResponse = HttpService:JSONDecode(data.choices[1].message.content)
+                if aiResponse and aiResponse.tactic then
+                    CurrentTactic = aiResponse.tactic
+                end
+            end
+        end
+
+        IsRequestingAI = false
+    end)
+end
+
+local LastShootTime = 0
+local HasLockedAndWaiting = false
+local LockTimer = 0
+
+-- ฟังก์ชันคลิกซ้ายสั่งยิงจริง 100% ทั้งคอมและมือถือ
+local function SafeHumanClick()
+    pcall(function()
+        if mouse1click then
+            mouse1click()
+        elseif pressmouse1 then
+            pressmouse1()
+        end
+    end)
+end
+
+-- [รวมลูป AI Bot และระบบเดินอัจฉริยะเข้าด้วยกันอย่างสมบูรณ์]
+local LastPosition = Vector3.new(0,0,0)
+local StuckTimer = 0
+local RoamAngle = 0
+local SmoothVelocity = Vector3.new(0,0,0)
 
 RunService.RenderStepped:Connect(function(dt)
     local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
@@ -1149,53 +1245,112 @@ RunService.RenderStepped:Connect(function(dt)
     local myRoot = myChar.HumanoidRootPart
     local humanoid = myChar:FindFirstChildOfClass("Humanoid")
 
-    local LockTarget = nil
-    local visualState = nil
-
-    if _G.U_HUB_CORE.AutoLockNoClick then
-        LockTarget, visualState = GetTarget(Center)
+    -- ตรวจสอบว่าเปิดระบบ AI Bot หรือไม่ ถ้าไม่เปิดให้ข้ามการควบคุมการเดินของ AI ไป
+    if not _G.U_HUB_CORE.AutoFarmEnabled then
+        local LockTarget = nil
+        if _G.U_HUB_CORE.AutoLockNoClick then
+            LockTarget, _ = GetTarget(Center)
+        end
+        if LockTarget then
+            local jitter = Vector3.new(math.random(-10, 10) / 100, math.random(-10, 10) / 100, 0)
+            local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
+            Camera.CFrame = Camera.CFrame:Lerp(TargetCF, _G.U_HUB_CORE.Sensitivity)
+        end
+        return
     end
 
+    -- ระบบการทำงานเมื่อเปิด AI Bot (เดินหาเป้าหมายและเคลื่อนที่อัตโนมัติ)
+    local autoTargetPart, autoState = GetClosestTargetAuto()
+    local LockTarget = nil
+    local destinationPos = nil
+
+    if autoTargetPart then
+        LockTarget = autoTargetPart
+        local targetRoot = autoTargetPart.Parent:FindFirstChild("HumanoidRootPart") or autoTargetPart
+        destinationPos = targetRoot.Position
+
+        if autoState and autoState.hasLineOfSight then
+            if not HasLockedAndWaiting then
+                HasLockedAndWaiting = true
+                LockTimer = tick()
+            else
+                if tick() - LockTimer >= 0.2 then
+                    if tick() - LastShootTime > 0.15 then
+                        LastShootTime = tick()
+                        SafeHumanClick()
+                    end
+                end
+            end
+        else
+            HasLockedAndWaiting = false
+        end
+    else
+        HasLockedAndWaiting = false
+        local huntTarget = GetAnyPlayerToHunt()
+        if huntTarget then
+            destinationPos = huntTarget.Position
+        else
+            RoamAngle = RoamAngle + 0.5 * dt
+            local mapScanRadius = 500
+            local offset = Vector3.new(math.cos(RoamAngle) * mapScanRadius, 0, math.sin(RoamAngle) * mapScanRadius)
+            destinationPos = myRoot.Position + offset
+        end
+    end
+
+    -- ล็อกเป้ากล้องของ AI Bot
     if LockTarget then
         local jitter = Vector3.new(math.random(-10, 10) / 100, math.random(-10, 10) / 100, 0)
         local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
-        local currentSens = _G.U_HUB_CORE.AutoFarmEnabled and _G.U_HUB_CORE.AiSmoothness or _G.U_HUB_CORE.Sensitivity
-        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
+        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, _G.U_HUB_CORE.AiSmoothness)
     end
 
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (myRoot.Position - player.Character.HumanoidRootPart.Position).Magnitude
-            
-            if dist <= _G.U_HUB_CORE.MaxEspDistance then
-                local hl = player.Character:FindFirstChild("U_ESP")
-                if _G.U_HUB_CORE.EspStyle ~= "ปิด" then
-                    if not hl then hl = Instance.new("Highlight", player.Character); hl.Name = "U_ESP" end
-                    hl.FillTransparency = (_G.U_HUB_CORE.EspStyle == "Hardcore (เรืองแสง)" and 0.5 or 1)
-                    hl.OutlineColor = _G.U_HUB_CORE.SharedColor
-                elseif hl then hl:Destroy() end
-                
-                local head = player.Character:FindFirstChild("Head")
-                if head then
-                    local b = head:FindFirstChild("U_B")
-                    if _G.U_HUB_CORE.ShowName or _G.U_HUB_CORE.ShowDistance then
-                        if not b then
-                            b = Instance.new("BillboardGui", head); b.Name = "U_B"; b.Size = UDim2.new(0,100,0,50); b.AlwaysOnTop = true; b.StudsOffset = Vector3.new(0,2,0)
-                            local l = Instance.new("TextLabel", b); l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1; l.Font = Enum.Font.GothamBold; l.TextSize = 14
-                        end
-                        b.TextLabel.Text = (_G.U_HUB_CORE.ShowName and player.Name or "") .. (_G.U_HUB_CORE.ShowDistance and "\n["..math.floor(dist).."m]" or "")
-                        b.TextLabel.TextColor3 = _G.U_HUB_CORE.MyCustomTextColor
-                    elseif b then b:Destroy() end
+    -- ระบบป้องกันการติดทางตันและสิ่งกีดขวาง
+    if (myRoot.Position - LastPosition).Magnitude < 0.2 then
+        StuckTimer = StuckTimer + dt
+        if StuckTimer > 0.3 then
+            humanoid.Jump = true
+            destinationPos = myRoot.Position + Vector3.new(math.random(-50, 50), 0, math.random(-50, 50))
+            StuckTimer = 0
+        end
+    else
+        StuckTimer = 0
+    end
+    LastPosition = myRoot.Position
+
+    -- สั่งเดินและหลบหลีกกำแพงอัตโนมัติ
+    if destinationPos then
+        local moveDir = (destinationPos - myRoot.Position)
+        moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
+        
+        if moveDir.Magnitude > 0.1 then
+            moveDir = moveDir.Unit
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            rayParams.FilterDescendantsInstances = {myChar, Camera}
+
+            local checkDist = 8
+            local hitCenter = workspace:Raycast(myRoot.Position, moveDir * checkDist, rayParams)
+            local leftDir = CFrame.Angles(0, math.rad(-55), 0) * moveDir
+            local hitLeft = workspace:Raycast(myRoot.Position, leftDir * checkDist, rayParams)
+            local rightDir = CFrame.Angles(0, math.rad(55), 0) * moveDir
+            local hitRight = workspace:Raycast(myRoot.Position, rightDir * checkDist, rayParams)
+
+            if hitCenter then
+                humanoid.Jump = true
+                if not hitLeft then
+                    moveDir = leftDir
+                elseif not hitRight then
+                    moveDir = rightDir
+                else
+                    moveDir = -moveDir
                 end
-            else
-                if player.Character:FindFirstChild("U_ESP") then player.Character.U_ESP:Destroy() end
-                if player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("U_B") then player.Character.Head.U_B:Destroy() end
             end
+
+            SmoothVelocity = SmoothVelocity:Lerp(moveDir * humanoid.WalkSpeed, 0.22)
+            humanoid:Move(SmoothVelocity.Unit * math.min(SmoothVelocity.Magnitude, humanoid.WalkSpeed), false)
         end
     end
 end)
-
-local UserInputService = game:GetService("UserInputService")
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -1218,189 +1373,4 @@ end)
 
 
     -- ตัวแปรจัดการสถานการณ์โดนประกบหน้าหลัง (Crossfire State)
-    _G.CrossfireState = _G.CrossfireState or { Mode = "Normal", Timer = 0, RearTarget = nil, LockWaitTimer = 0, IsLockedAndWaiting = false }
-
-    if autoTargetPart then
-        LockTarget = autoTargetPart
-        visualState = autoState
-
-        local targetRoot = autoTargetPart.Parent:FindFirstChild("HumanoidRootPart") or autoTargetPart
-        
-        -- ตรวจเช็คว่ามีผู้เล่นแอบอยู่ข้างหลังเราด้วยหรือไม่
-        local behindTarget = nil
-        pcall(function()
-            for _, player in ipairs(game.Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                    local pRoot = player.Character.HumanoidRootPart
-                    local relPos = root.CFrame:PointToObjectSpace(pRoot.Position)
-                    if relPos.Z < -5 and relPos.Magnitude < 35 then
-                        behindTarget = pRoot
-                        break
-                    end
-                end
-            end
-        end)
-
-        if behindTarget and _G.CrossfireState.Mode == "Normal" then
-            _G.CrossfireState.Mode = "Confused"
-            _G.CrossfireState.Timer = tick()
-            _G.CrossfireState.RearTarget = behindTarget
-            _G.CrossfireState.IsLockedAndWaiting = false
-        end
-
-        if _G.CrossfireState.Mode == "Confused" then
-            -- เงื่อนไขยิงตัวหน้าหลังเจอคนประกบ (หน่วง 0.2 วิหลังล็อก)
-            if autoState and autoState.hasLineOfSight then
-                if not _G.CrossfireState.IsLockedAndWaiting then
-                    _G.CrossfireState.IsLockedAndWaiting = true
-                    _G.CrossfireState.LockWaitTimer = tick()
-                else
-                    if tick() - _G.CrossfireState.LockWaitTimer >= 0.2 then
-                        if tick() - LastShootTime > 0.08 then
-                            LastShootTime = tick()
-                            SafeHumanClick()
-                        end
-                    end
-                end
-            else
-                _G.CrossfireState.IsLockedAndWaiting = false
-            end
-
-            if tick() - _G.CrossfireState.Timer >= 0.5 then
-                _G.CrossfireState.Mode = "AttackRear"
-                _G.CrossfireState.Timer = tick()
-                _G.CrossfireState.IsLockedAndWaiting = false
-            else
-                destinationPos = root.Position + Vector3.new(math.random(-15, 15), 0, math.random(-15, 15))
-                humanoid.Jump = false -- ไม่กระโดดตอนเดินเอ๋อ
-            end
-        elseif _G.CrossfireState.Mode == "AttackRear" then
-            if _G.CrossfireState.RearTarget and _G.CrossfireState.RearTarget.Parent then
-                LockTarget = _G.CrossfireState.RearTarget
-                destinationPos = _G.CrossfireState.RearTarget.Position
-                
-                if not _G.CrossfireState.IsLockedAndWaiting then
-                    _G.CrossfireState.IsLockedAndWaiting = true
-                    _G.CrossfireState.LockWaitTimer = tick()
-                else
-                    if tick() - _G.CrossfireState.LockWaitTimer >= 0.2 then
-                        if tick() - LastShootTime > 0.08 then
-                            LastShootTime = tick()
-                            SafeHumanClick()
-                        end
-                    end
-                end
-            else
-                _G.CrossfireState.Mode = "Normal"
-            end
-
-            if tick() - _G.CrossfireState.Timer > 1.2 then
-                _G.CrossfireState.Mode = "Normal"
-            end
-        else
-            -- สถานการณ์ปกติ: เมื่อเจอผู้เล่น ให้ล็อกเป้าแล้วรอ 0.2 วิ ค่อยยิง
-            local distanceToTarget = (targetRoot.Position - root.Position).Magnitude
-            local healthPercent = humanoid.Health / humanoid.MaxHealth
-            
-            if healthPercent < 0.3 then
-                CurrentTactic = "RETREAT"
-            elseif distanceToTarget < 15 then
-                CurrentTactic = "JUMP_SHOOT"
-            elseif distanceToTarget > 40 then
-                CurrentTactic = "FLANK"
-            end
-
-            if autoState and autoState.hasLineOfSight then
-                if not _G.CrossfireState.IsLockedAndWaiting then
-                    _G.CrossfireState.IsLockedAndWaiting = true
-                    _G.CrossfireState.LockWaitTimer = tick() -- เริ่มจับเวลา 0.2 วิเมื่อล็อกเป้าติด
-                else
-                    -- ครบ 0.2 วิหลังล็อกเป้า ถึงจะเหนี่ยวไกยิง
-                    if tick() - _G.CrossfireState.LockWaitTimer >= 0.2 then
-                        if tick() - LastShootTime > 0.1 then
-                            LastShootTime = tick()
-                            SafeHumanClick()
-                        end
-                    end
-                end
-            else
-                _G.CrossfireState.IsLockedAndWaiting = false
-            end
-
-            destinationPos = targetRoot.Position
-            local currentRadius = math.clamp(_G.U_HUB_CORE.AiWalkRadius, 5, 50)
-
-            if CurrentTactic == "FLANK" then
-                local tacticalWave = math.sin(tick() * 6) * 15
-                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * currentRadius) + (targetRoot.CFrame.LookVector * tacticalWave)
-            elseif CurrentTactic == "JUMP_SHOOT" then
-                if math.random(1, 15) == 1 and humanoid.FloorMaterial ~= Enum.Material.Air then
-                    humanoid.Jump = true
-                end
-                local randomStrafe = (math.random(1, 2) == 1 and 1 or -1) * math.random(12, 22)
-                destinationPos = targetRoot.Position + (targetRoot.CFrame.RightVector * randomStrafe)
-            elseif CurrentTactic == "RETREAT" then
-                destinationPos = root.Position + (root.Position - targetRoot.Position).Unit * 35 + Vector3.new(math.random(-20, 20), 0, math.random(-20, 20))
-            end
-        end
-    else
-        _G.CrossfireState.Mode = "Normal"
-        _G.CrossfireState.IsLockedAndWaiting = false
-        
-        -- เมื่อไม่เจอใคร ให้เดินสำรวจแผนที่เพื่อหาผู้เล่นทั่วแมพทันที (ไม่มีการกระโดดอยู่เฉยๆ)
-        local huntTarget = GetAnyPlayerToHunt()
-        if huntTarget then
-            destinationPos = huntTarget.Position
-        else
-            RoamAngle = RoamAngle + 0.5 * dt
-            local mapScanRadius = 500
-            local offset = Vector3.new(math.cos(RoamAngle) * mapScanRadius, 0, math.sin(RoamAngle) * mapScanRadius)
-            destinationPos = root.Position + offset
-        end
-    end
-    -- ระบบแก้ติดสิ่งกีดขวาง (เฉพาะตอนติดทางตันจริงๆ ถึงจะกระโดดข้าม)
-    if (root.Position - LastPosition).Magnitude < 0.2 then
-        StuckTimer = StuckTimer + dt
-        if StuckTimer > 0.3 then
-            humanoid.Jump = true
-            destinationPos = root.Position + Vector3.new(math.random(-50, 50), 0, math.random(-50, 50))
-            StuckTimer = 0
-        end
-    else
-        StuckTimer = 0
-    end
-    LastPosition = root.Position
-
-    -- ควบคุมการเคลื่อนที่และเรดาร์หลบกำแพง
-    if destinationPos then
-        local moveDir = (destinationPos - root.Position)
-        moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
-        
-        if moveDir.Magnitude > 0.1 then
-            moveDir = moveDir.Unit
-            local rayParams = RaycastParams.new()
-            rayParams.FilterType = Enum.RaycastFilterType.Exclude
-            rayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
-
-            local checkDist = 8
-            local hitCenter = workspace:Raycast(root.Position, moveDir * checkDist, rayParams)
-            local leftDir = CFrame.Angles(0, math.rad(-55), 0) * moveDir
-            local hitLeft = workspace:Raycast(root.Position, leftDir * checkDist, rayParams)
-            local rightDir = CFrame.Angles(0, math.rad(55), 0) * moveDir
-            local hitRight = workspace:Raycast(root.Position, rightDir * checkDist, rayParams)
-
-            if hitCenter then
-                humanoid.Jump = true
-                if not hitLeft then
-                    moveDir = leftDir
-                elseif not hitRight then
-                    moveDir = rightDir
-                else
-                    moveDir = -moveDir
-                end
-            end
-
-            SmoothVelocity = SmoothVelocity:Lerp(moveDir * humanoid.WalkSpeed, 0.22)
-            humanoid:Move(SmoothVelocity.Unit * math.min(SmoothVelocity.Magnitude, humanoid.WalkSpeed), false)
-        end
-    end
+    

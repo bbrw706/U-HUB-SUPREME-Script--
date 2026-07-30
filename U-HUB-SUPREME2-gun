@@ -17,19 +17,25 @@ local function GetClosestTargetAuto()
     local shortestDist = math.huge
     local visualState = nil
     
+    -- [แก้จุดนี้] เพิ่มการเช็คความปลอดภัยของตัวเราเอง
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChildOfClass("Humanoid") then
+        return nil, nil
+    end
+    local myRoot = myChar.HumanoidRootPart
 
     for _, v in pairs(Players:GetPlayers()) do
         local isWL = false
         local playerName = v.Name
-        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == playerName then isWL = true; break end end
+        for _, n in pairs(_G.U_HUB_CORE.Whitelist or {}) do if n == playerName then isWL = true; break end end
         if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
             local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
-            if Part and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local Mag = (LocalPlayer.Character.HumanoidRootPart.Position - Part.Position).Magnitude
+            if Part then
+                local Mag = (myRoot.Position - Part.Position).Magnitude
                 if Mag <= _G.U_HUB_CORE.MaxLockDistance then
                     local RayParams = RaycastParams.new()
                     RayParams.FilterType = Enum.RaycastFilterType.Exclude
-                    RayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+                    RayParams.FilterDescendantsInstances = {myChar, Camera}
                     local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
 
                     local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
@@ -41,7 +47,7 @@ local function GetClosestTargetAuto()
                             targetPart = Part
                             local Pos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
                             visualState = {
-                                myHealth = LocalPlayer.Character.Humanoid.Health,
+                                myHealth = myChar.Humanoid.Health,
                                 targetDistance = math.floor(Mag),
                                 targetOnScreen = OnScreen,
                                 hasLineOfSight = hasLoS
@@ -353,6 +359,332 @@ Tabs.QwenAI:AddInput("GroqApiKeyInput", {
     end
 })
 
+-- [[ โค้ดย่อย: ซุปเปอร์ AI เดินอัจฉริยะ (Block CoreGui Errors เรียบร้อย) ]]
+
+-- ปิดกั้นไม่ให้ Error ภายในของเกมเด้งกวนใจใน Developer Console
+scriptingErrorConnection = game:GetService("ScriptContext").Error:Connect(function(message, trace, scriptObj)
+    if string.find(message, "HumanoidRootPart") then
+        -- ถ้าเป็น Error เรื่อง HumanoidRootPart ที่เกมหลักฟ้อง ให้ซ่อนทิ้งทันที
+        return
+    end
+end)
+
+_G.U_HUB_CORE.FollowClosestEnabled = false
+
+local function GetAdvancedSmartTarget()
+    local targetPart = nil
+    local shortestDist = math.huge
+    local visualState = nil
+    
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChild("Humanoid") then
+        return nil, nil
+    end
+    local myRoot = myChar.HumanoidRootPart
+
+    for _, v in pairs(Players:GetPlayers()) do
+        pcall(function()
+            if v ~= LocalPlayer and v and v.Character then
+                local char = v.Character
+                local isWL = false
+                local playerName = v.Name
+                for _, n in pairs(_G.U_HUB_CORE.Whitelist or {}) do 
+                    if n == playerName then isWL = true; break end 
+                end
+                
+                if not isWL then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    local rootPart = char:FindFirstChild("HumanoidRootPart")
+                    
+                    if humanoid and humanoid.Health > 0 and rootPart then
+                        local aimPartName = _G.U_HUB_CORE.AimPart or "Head"
+                        local Part = char:FindFirstChild(aimPartName) or char:FindFirstChild("Head") or rootPart
+                        
+                        if Part then
+                            local Mag = (myRoot.Position - Part.Position).Magnitude
+                            local maxDist = _G.U_HUB_CORE.AiWalkRadius or 5000
+                            
+                            if Mag <= maxDist then
+                                local RayParams = RaycastParams.new()
+                                RayParams.FilterType = Enum.RaycastFilterType.Exclude
+                                RayParams.FilterDescendantsInstances = {myChar, Camera}
+                                local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
+
+                                local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(char))
+                                local mode = _G.U_HUB_CORE.AiTargetMode
+
+                                local isValidTarget = false
+                                if mode == "ล็อกโหด (ทะลุกำแพง)" then
+                                    isValidTarget = true
+                                else
+                                    if hasLoS then isValidTarget = true end
+                                end
+
+                                if isValidTarget then
+                                    if Mag < shortestDist then
+                                        shortestDist = Mag
+                                        targetPart = Part
+                                        local _, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+                                        visualState = {
+                                            myHealth = humanoid.Health,
+                                            targetDistance = math.floor(Mag),
+                                            targetOnScreen = OnScreen,
+                                            hasLineOfSight = hasLoS
+                                        }
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    return targetPart, visualState
+end
+
+local function GetRoamingHuntTarget()
+    local bestPart = nil
+    local shortestDist = math.huge
+    
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+    local myRoot = myChar.HumanoidRootPart
+
+    for _, v in pairs(Players:GetPlayers()) do
+        pcall(function()
+            if v ~= LocalPlayer and v and v.Character then
+                local char = v.Character
+                local isWL = false
+                local playerName = v.Name
+                for _, n in pairs(_G.U_HUB_CORE.Whitelist or {}) do 
+                    if n == playerName then isWL = true; break end 
+                end
+                
+                if not isWL then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    local rootPart = char:FindFirstChild("HumanoidRootPart")
+                    
+                    if humanoid and humanoid.Health > 0 and rootPart then
+                        local Mag = (myRoot.Position - rootPart.Position).Magnitude
+                        if Mag < shortestDist then
+                            shortestDist = Mag
+                            bestPart = rootPart
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    return bestPart
+end
+
+local FollowClosestToggleObj = Tabs.QwenAI:AddToggle("FollowClosestToggle", {
+    Title = "🧠 ซุปเปอร์ AI เดินอัจฉริยะ (Clean Console)",
+    Description = "เดินหาคนเอง หลบกำแพง และซ่อน Error กวนใจตอนตาย",
+    Default = false
+})
+
+FollowClosestToggleObj:OnChanged(function(Value)
+    _G.U_HUB_CORE.FollowClosestEnabled = Value
+end)
+
+Tabs.QwenAI:AddKeybind("FollowClosestKeybind", {
+    Title = "ปุ่มลัดเปิด/ปิด ซุปเปอร์ AI",
+    Default = "X",
+    Mode = "Toggle",
+    Callback = function(Value)
+        _G.U_HUB_CORE.FollowClosestEnabled = not _G.U_HUB_CORE.FollowClosestEnabled
+        FollowClosestToggleObj:SetValue(_G.U_HUB_CORE.FollowClosestEnabled)
+    end
+})
+
+task.spawn(function()
+    local lastFireTickFollow = 0
+    while true do
+        task.wait(0.2)
+        local isEnabled = _G.U_HUB_CORE.FollowClosestEnabled or _G.U_HUB_CORE.AutoFarmEnabled
+        if isEnabled then
+            pcall(function()
+                local char = LocalPlayer.Character
+                local inLobbyOrDead = false
+                
+                if not char or not char:FindFirstChild("Humanoid") or not char:FindFirstChild("HumanoidRootPart") then
+                    inLobbyOrDead = true
+                else
+                    local humanoid = char.Humanoid
+                    local root = char.HumanoidRootPart
+                    if humanoid.Health <= 0 or root.Position.Y < -400 then
+                        inLobbyOrDead = true
+                    end
+                end
+
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui and not inLobbyOrDead then
+                    for _, gui in pairs(playerGui:GetChildren()) do
+                        if gui:IsA("ScreenGui") and gui.Enabled then
+                            local nameLower = gui.Name:lower()
+                            if nameLower:find("lobby") or nameLower:find("menu") or nameLower:find("spawn") or nameLower:find("main") or nameLower:find("home") or nameLower:find("team") then
+                                for _, descendant in pairs(gui:GetDescendants()) do
+                                    if descendant:IsA("TextButton") or descendant:IsA("ImageButton") then
+                                        local btnText = (descendant.Name .. (descendant:IsA("TextButton") and descendant.Text or "")):lower()
+                                        if btnText:find("play") or btnText:find("start") or btnText:find("spawn") or btnText:find("deploy") then
+                                            if descendant.Visible then
+                                                inLobbyOrDead = true
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if inLobbyOrDead then break end
+                    end
+                end
+
+                if inLobbyOrDead then
+                    local currentTick = tick()
+                    if currentTick - lastFireTickFollow >= 4.0 then
+                        lastFireTickFollow = currentTick
+                        task.wait(_G.U_HUB_CORE.RespawnDelay or 0.5)
+                        pcall(function()
+                            local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+                            if remotes then
+                                for _, remName in ipairs({"Command", "RemoteFunction", "RemoteEvent", "Event", "Function", "Play", "Spawn"}) do
+                                    local rem = remotes:FindFirstChild(remName)
+                                    if rem then
+                                        if rem:IsA("RemoteEvent") then
+                                            rem:FireServer("Play")
+                                            rem:FireServer("Spawn")
+                                        elseif rem.ClassName == "RemoteFunction" then
+                                            pcall(function() rem:InvokeServer("Play") end)
+                                        end
+                                    end
+                                end
+                            end
+                            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer("Play")
+                        end)
+                    end
+                else
+                    lastFireTickFollow = 0
+                end
+            end)
+        else
+            lastFireTickFollow = 0
+        end
+    end
+end)
+
+local LastShootTimeSafe = 0
+local HasLockedAndWaitingSafe = false
+local LockTimerSafe = 0
+local RoamAngleSafe = 0
+local LastPosSafe = Vector3.new(0,0,0)
+local StuckTimerSafe = 0
+local AvoidSideOffsetSafe = 1
+
+RunService.RenderStepped:Connect(function(dt)
+    if not _G.U_HUB_CORE.FollowClosestEnabled then 
+        HasLockedAndWaitingSafe = false
+        return 
+    end
+
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("Humanoid") or not character:FindFirstChild("HumanoidRootPart") then return end
+
+    local humanoid = character.Humanoid
+    local root = character.HumanoidRootPart
+    
+    local LockTarget, _ = GetAdvancedSmartTarget()
+    local rawDestination = nil
+
+    if LockTarget then
+        rawDestination = LockTarget.Position
+    else
+        local huntTarget = GetRoamingHuntTarget()
+        if huntTarget then
+            rawDestination = huntTarget.Position
+        else
+            RoamAngleSafe = RoamAngleSafe + 0.5 * dt
+            local mapScanRadius = 300
+            local offset = Vector3.new(math.cos(RoamAngleSafe) * mapScanRadius, 0, math.sin(RoamAngleSafe) * mapScanRadius)
+            rawDestination = root.Position + offset
+        end
+    end
+
+    local finalDestination = rawDestination
+    if rawDestination then
+        local moveDir = (Vector3.new(rawDestination.X, root.Position.Y, rawDestination.Z) - root.Position)
+        local distanceToTarget = moveDir.Magnitude
+        if distanceToTarget > 1 then
+            moveDir = moveDir.Unit
+            
+            local wallParams = RaycastParams.new()
+            wallParams.FilterType = Enum.RaycastFilterType.Exclude
+            wallParams.FilterDescendantsInstances = {character, Camera}
+            
+            local wallCheck = workspace:Raycast(root.Position, moveDir * 6, wallParams)
+            if wallCheck then
+                local perpendicular = Vector3.new(-moveDir.Z, 0, moveDir.X) * AvoidSideOffsetSafe
+                finalDestination = root.Position + (moveDir * 3) + (perpendicular * 10)
+                humanoid.Jump = true
+            end
+        end
+        humanoid:MoveTo(finalDestination)
+    end
+
+    if (root.Position - LastPosSafe).Magnitude < 0.2 then
+        StuckTimerSafe = StuckTimerSafe + dt
+        if StuckTimerSafe > 0.25 then
+            AvoidSideOffsetSafe = AvoidSideOffsetSafe * -1
+            humanoid.Jump = true
+            StuckTimerSafe = 0
+        end
+    else
+        StuckTimerSafe = 0
+    end
+    LastPosSafe = root.Position
+
+    if LockTarget then
+        local jitter = Vector3.new(math.random(-10, 10)/100, math.random(-10, 10)/100, 0)
+        local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
+        
+        local currentSens = _G.U_HUB_CORE.AiSmoothness or 0.45
+        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
+
+        local _, onScreen = Camera:WorldToViewportPoint(LockTarget.Position)
+        if onScreen then
+            local screenPos = Camera:WorldToViewportPoint(LockTarget.Position)
+            local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+            local distanceToCenter = (Vector2.new(screenPos.X, screenPos.Y) - Center).Magnitude
+
+            if distanceToCenter < 25 then
+                if not HasLockedAndWaitingSafe then
+                    HasLockedAndWaitingSafe = true
+                    LockTimerSafe = tick()
+                else
+                    if tick() - LockTimerSafe >= 0.2 then
+                        if tick() - LastShootTimeSafe > 0.15 then
+                            LastShootTimeSafe = tick()
+                            pcall(function()
+                                local tool = character:FindFirstChildOfClass("Tool")
+                                if tool then tool:Activate() end
+                            end)
+                            if mouse1click then pcall(mouse1click) end
+                        end
+                    end
+                end
+            else
+                HasLockedAndWaitingSafe = false
+            end
+        else
+            HasLockedAndWaitingSafe = false
+        end
+    else
+        HasLockedAndWaitingSafe = false
+    end
+end)
+
 local AutoFarmToggleObj = Tabs.QwenAI:AddToggle("AutoFarmToggle", {
     Title = "เปิดระบบ AI Bot", 
     Description = "ออโต้เกิด+ฟาร์ม",
@@ -362,6 +694,8 @@ local AutoFarmToggleObj = Tabs.QwenAI:AddToggle("AutoFarmToggle", {
 AutoFarmToggleObj:OnChanged(function(Value) 
     _G.U_HUB_CORE.AutoFarmEnabled = Value 
 end)
+
+
 
 Tabs.QwenAI:AddKeybind("AiKeybindToggle", {
     Title = "ตั้งค่าปุ่มคีย์บอร์ดเปิด/ปิด AI Bot",
@@ -411,6 +745,7 @@ Tabs.Combat:AddToggle("AutoLock", {Title = "ล็อคเป้า (เมื�
 Tabs.Combat:AddSlider("Smooth", { Title = "ความเร็วในการล็อค", Default = 0.05, Min = 0.01, Max = 1, Rounding = 2, Callback = function(Value) _G.U_HUB_CORE.Sensitivity = Value end})
 Tabs.Combat:AddDropdown("AimPartDropdown", { Title = "เลือกจุดที่จะล็อค", Values = {"Head (หัว)", "HumanoidRootPart (ตัว)"}, Default = "Head", Callback = function(v) _G.U_HUB_CORE.AimPart = (v == "Head (หัว)" and "Head" or "HumanoidRootPart") end })
 Tabs.Combat:AddDropdown("MouseSpecial", { Title = "โหมดความโหด", Values = {"Normal (ระยะสายตา)", "Hardcore (ล็อคโหด)"}, Default = "Normal (ระยะสายตา)", Callback = function(Value) _G.U_HUB_CORE.LockMode = Value end })
+
 
 -- [[ VISUALS ]]
 Tabs.Visuals:AddToggle("ShowFovBtn", {Title = "แสดงวงกลม POV", Default = true}):OnChanged(function(Value) _G.U_HUB_CORE.FovEnabled = Value end)
@@ -623,18 +958,12 @@ local LockTimer = 0
 -- ฟังก์ชันคลิกซ้ายสั่งยิงจริง 100% ทั้งคอมและมือถือ
 local function SafeHumanClick()
     pcall(function()
-        local character = LocalPlayer.Character
-        if character then
-            local tool = character:FindFirstChildOfClass("Tool")
-            if tool then
-                tool:Activate()
-            end
+        if mouse1click then
+            mouse1click()
+        elseif pressmouse1 then
+            pressmouse1()
         end
     end)
-    
-    if mouse1click then
-        pcall(mouse1click)
-    end
 end
 
 -- ระบบเช็คการล็อกและคูลดาวน์ 0.1 วิ ก่อนยิง
@@ -739,15 +1068,21 @@ end
 local function GetTarget(Point)
     local Target, Closest = nil, _G.U_HUB_CORE.FovRadius
     local visualState = nil
+    
+    -- [แก้จุดนี้] เพิ่มการเช็คว่าตัวละครและ HumanoidRootPart ของเรายังมีอยู่ไหม
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChildOfClass("Humanoid") then
+        return nil, nil
+    end
+    local myRoot = myChar.HumanoidRootPart
 
     for _, v in pairs(Players:GetPlayers()) do
         local isWL = false
-        local playerName = v.Name
-        for _, n in pairs(_G.U_HUB_CORE.Whitelist) do if n == playerName then isWL = true; break end end
+        for _, n in pairs(_G.U_HUB_CORE.Whitelist or {}) do if n == v.Name then isWL = true; break end end
         if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
             local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
             if Part then
-                local Mag = (LocalPlayer.Character.HumanoidRootPart.Position - Part.Position).Magnitude
+                local Mag = (myRoot.Position - Part.Position).Magnitude
                 if Mag <= _G.U_HUB_CORE.MaxLockDistance then
                     local Pos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
                     if OnScreen then
@@ -755,17 +1090,15 @@ local function GetTarget(Point)
                         if Dist < Closest then
                             local RayParams = RaycastParams.new()
                             RayParams.FilterType = Enum.RaycastFilterType.Exclude
-                            RayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+                            RayParams.FilterDescendantsInstances = {myChar, Camera}
                             local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
 
                             local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
-                            local modeCheck = _G.U_HUB_CORE.LockMode
-
-                            if modeCheck == "Hardcore (ล็อคโหด)" or hasLoS then
+                            if _G.U_HUB_CORE.LockMode == "Hardcore (ล็อคโหด)" or hasLoS then
                                 Closest = Dist
                                 Target = Part
                                 visualState = {
-                                    myHealth = LocalPlayer.Character.Humanoid.Health,
+                                    myHealth = myChar.Humanoid.Health,
                                     targetDistance = math.floor(Mag),
                                     targetOnScreen = OnScreen,
                                     hasLineOfSight = hasLoS
@@ -809,6 +1142,13 @@ RunService.RenderStepped:Connect(function(dt)
         _G.FOV_Stroke.Color = _G.U_HUB_CORE.PovColor
     end
 
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChildOfClass("Humanoid") then
+        return
+    end
+    local myRoot = myChar.HumanoidRootPart
+    local humanoid = myChar:FindFirstChildOfClass("Humanoid")
+
     local LockTarget = nil
     local visualState = nil
 
@@ -816,12 +1156,66 @@ RunService.RenderStepped:Connect(function(dt)
         LockTarget, visualState = GetTarget(Center)
     end
 
-    if _G.U_HUB_CORE.AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-    local autoTargetPart, autoState = GetClosestTargetAuto()
-    local humanoid = LocalPlayer.Character.Humanoid
-    local root = LocalPlayer.Character.HumanoidRootPart
+    if LockTarget then
+        local jitter = Vector3.new(math.random(-10, 10) / 100, math.random(-10, 10) / 100, 0)
+        local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
+        local currentSens = _G.U_HUB_CORE.AutoFarmEnabled and _G.U_HUB_CORE.AiSmoothness or _G.U_HUB_CORE.Sensitivity
+        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
+    end
 
-    local destinationPos = nil
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (myRoot.Position - player.Character.HumanoidRootPart.Position).Magnitude
+            
+            if dist <= _G.U_HUB_CORE.MaxEspDistance then
+                local hl = player.Character:FindFirstChild("U_ESP")
+                if _G.U_HUB_CORE.EspStyle ~= "ปิด" then
+                    if not hl then hl = Instance.new("Highlight", player.Character); hl.Name = "U_ESP" end
+                    hl.FillTransparency = (_G.U_HUB_CORE.EspStyle == "Hardcore (เรืองแสง)" and 0.5 or 1)
+                    hl.OutlineColor = _G.U_HUB_CORE.SharedColor
+                elseif hl then hl:Destroy() end
+                
+                local head = player.Character:FindFirstChild("Head")
+                if head then
+                    local b = head:FindFirstChild("U_B")
+                    if _G.U_HUB_CORE.ShowName or _G.U_HUB_CORE.ShowDistance then
+                        if not b then
+                            b = Instance.new("BillboardGui", head); b.Name = "U_B"; b.Size = UDim2.new(0,100,0,50); b.AlwaysOnTop = true; b.StudsOffset = Vector3.new(0,2,0)
+                            local l = Instance.new("TextLabel", b); l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1; l.Font = Enum.Font.GothamBold; l.TextSize = 14
+                        end
+                        b.TextLabel.Text = (_G.U_HUB_CORE.ShowName and player.Name or "") .. (_G.U_HUB_CORE.ShowDistance and "\n["..math.floor(dist).."m]" or "")
+                        b.TextLabel.TextColor3 = _G.U_HUB_CORE.MyCustomTextColor
+                    elseif b then b:Destroy() end
+                end
+            else
+                if player.Character:FindFirstChild("U_ESP") then player.Character.U_ESP:Destroy() end
+                if player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("U_B") then player.Character.Head.U_B:Destroy() end
+            end
+        end
+    end
+end)
+
+local UserInputService = game:GetService("UserInputService")
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    -- กดปุ่ม P เพื่อกดเล่น (Play)
+    if input.KeyCode == Enum.KeyCode.P then
+        pcall(function()
+            FirePlayRemote()
+        end)
+    end
+
+    -- กดปุ่ม N เพื่อกลับล็อบบี้ (เปลี่ยนจาก M เป็น N)
+    if input.KeyCode == Enum.KeyCode.N then
+        pcall(function()
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer("Lobby")
+        end)
+    end
+end)
+
+
 
     -- ตัวแปรจัดการสถานการณ์โดนประกบหน้าหลัง (Crossfire State)
     _G.CrossfireState = _G.CrossfireState or { Mode = "Normal", Timer = 0, RearTarget = nil, LockWaitTimer = 0, IsLockedAndWaiting = false }
@@ -1010,66 +1404,3 @@ RunService.RenderStepped:Connect(function(dt)
             humanoid:Move(SmoothVelocity.Unit * math.min(SmoothVelocity.Magnitude, humanoid.WalkSpeed), false)
         end
     end
-end
-
-    if LockTarget then
-        local jitter = Vector3.new(math.random(-10, 10)/100, math.random(-10, 10)/100, 0)
-        local TargetCF = CFrame.new(Camera.CFrame.Position, LockTarget.Position + jitter)
-        local currentSens = _G.U_HUB_CORE.AutoFarmEnabled and _G.U_HUB_CORE.AiSmoothness or _G.U_HUB_CORE.Sensitivity
-        Camera.CFrame = Camera.CFrame:Lerp(TargetCF, currentSens)
-    end
-
-    -- ESP SYSTEM
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
-            
-            if dist <= _G.U_HUB_CORE.MaxEspDistance then
-                local hl = player.Character:FindFirstChild("U_ESP")
-                if _G.U_HUB_CORE.EspStyle ~= "ปิด" then
-                    if not hl then hl = Instance.new("Highlight", player.Character); hl.Name = "U_ESP" end
-                    hl.FillTransparency = (_G.U_HUB_CORE.EspStyle == "Hardcore (เรืองแสง)" and 0.5 or 1)
-                    hl.OutlineColor = _G.U_HUB_CORE.SharedColor
-                elseif hl then hl:Destroy() end
-                
-                local head = player.Character:FindFirstChild("Head")
-                if head then
-                    local b = head:FindFirstChild("U_B")
-                    if _G.U_HUB_CORE.ShowName or _G.U_HUB_CORE.ShowDistance then
-                        if not b then
-                            b = Instance.new("BillboardGui", head); b.Name = "U_B"; b.Size = UDim2.new(0,100,0,50); b.AlwaysOnTop = true; b.StudsOffset = Vector3.new(0,2,0)
-                            local l = Instance.new("TextLabel", b); l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1; l.Font = "GothamBold"; l.TextSize = 14; l.OutlineAlpha = 1
-                        end
-                        b.TextLabel.Text = (_G.U_HUB_CORE.ShowName and player.Name or "") .. (_G.U_HUB_CORE.ShowDistance and "\n["..math.floor(dist).."m]" or "")
-                        b.TextLabel.TextColor3 = _G.U_HUB_CORE.MyCustomTextColor
-                    elseif b then b:Destroy() end
-                end
-            else
-                if player.Character:FindFirstChild("U_ESP") then player.Character.U_ESP:Destroy() end
-                if player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("U_B") then player.Character.Head.U_B:Destroy() end
-            end
-        end
-    end
-end)
-
--- [[ ระบบปุ่มลัด: P = กดเล่น / N = กลับล็อบบี้ ]]
-local UserInputService = game:GetService("UserInputService")
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-
-    -- กดปุ่ม P เพื่อกดเล่น (Play)
-    if input.KeyCode == Enum.KeyCode.P then
-        pcall(function()
-            FirePlayRemote()
-        end)
-    end
-
-    -- กดปุ่ม N เพื่อกลับล็อบบี้ (เปลี่ยนจาก M เป็น N)
-    if input.KeyCode == Enum.KeyCode.N then
-        pcall(function()
-            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Command"):FireServer("Lobby")
-        end)
-    end
-end)
-

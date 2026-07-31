@@ -10,53 +10,116 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 math.randomseed(tick())
 
+PlayerSpawnTimes = {} 
+local LocalPlayer = Players.LocalPlayer
+
+-- [[ โค้ดสำหรับดักจับเวลาเกิดของผู้เล่น ]]
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(char)
+        PlayerSpawnTimes[player] = tick()
+    end)
+end)
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player.Character then
+        PlayerSpawnTimes[player] = tick()
+    end
+    player.CharacterAdded:Connect(function(char)
+        PlayerSpawnTimes[player] = tick()
+    end)
+end
+
 local CurrentSize = UDim2.fromOffset(580, 460)
 
-local function GetClosestTargetAuto()
+
+local function GetAdvancedSmartTarget()
     local targetPart = nil
     local shortestDist = math.huge
     local visualState = nil
     
-    -- [แก้จุดนี้] เพิ่มการเช็คความปลอดภัยของตัวเราเอง
     local myChar = LocalPlayer.Character
-    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChildOfClass("Humanoid") then
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChild("Humanoid") then
         return nil, nil
     end
     local myRoot = myChar.HumanoidRootPart
 
     for _, v in pairs(Players:GetPlayers()) do
-        local isWL = false
-        local playerName = v.Name
-        for _, n in pairs(_G.U_HUB_CORE.Whitelist or {}) do if n == playerName then isWL = true; break end end
-        if not isWL and v ~= LocalPlayer and v.Character and v.Character:FindFirstChildOfClass("Humanoid") and v.Character.Humanoid.Health > 0 then
-            local Part = v.Character:FindFirstChild(_G.U_HUB_CORE.AimPart) or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
-            if Part then
-                local Mag = (myRoot.Position - Part.Position).Magnitude
-                if Mag <= _G.U_HUB_CORE.MaxLockDistance then
-                    local RayParams = RaycastParams.new()
-                    RayParams.FilterType = Enum.RaycastFilterType.Exclude
-                    RayParams.FilterDescendantsInstances = {myChar, Camera}
-                    local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
-
-                    local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(v.Character))
-                    local mode = _G.U_HUB_CORE.AiTargetMode
-
-                    if mode == "ล็อกโหด (ทะลุกำแพง)" or hasLoS then
-                        if Mag < shortestDist then
-                            shortestDist = Mag
-                            targetPart = Part
-                            local Pos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
-                            visualState = {
-                                myHealth = myChar.Humanoid.Health,
-                                targetDistance = math.floor(Mag),
-                                targetOnScreen = OnScreen,
-                                hasLineOfSight = hasLoS
-                            }
+        pcall(function()
+            if v ~= LocalPlayer and v and v.Character then
+                local char = v.Character
+                local isWL = false
+                local playerName = v.Name
+                for _, n in pairs(_G.U_HUB_CORE.Whitelist or {}) do 
+                    if n == playerName then isWL = true; break end 
+                end
+                
+                if not isWL then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    local rootPart = char:FindFirstChild("HumanoidRootPart")
+                    
+                    if humanoid and humanoid.Health > 0 and rootPart then
+                        
+                        -- [[ เพิ่มระบบเช็คเวลาเกิดใหม่ 1 วินาที: ป้องกัน AI บอทเดินเข้าหาคนเพิ่งเกิด ]]
+                        if not PlayerSpawnTimes[v] then
+                            PlayerSpawnTimes[v] = tick()
                         end
+                        local timeElapsed = tick() - PlayerSpawnTimes[v]
+                        local isImmune = timeElapsed < 1.0
+                        
+                        if not isImmune then -- ถ้าพ้น 1 วิแล้ว AI ถึงจะมองเห็นและเดินเข้าหา
+                            local aimPartName = _G.U_HUB_CORE.AimPart or "Head"
+                            if _G.U_HUB_CORE.AiTargetMode == "สุ่มล็อกเป้า" then
+                                local randomRoll = math.random(1, 100)
+                                if randomRoll <= 60 then
+                                    aimPartName = "Head"
+                                else
+                                    aimPartName = "HumanoidRootPart"
+                                end
+                            end
+
+                            local Part = char:FindFirstChild(aimPartName) or char:FindFirstChild("Head") or rootPart
+                            
+                            if Part then
+                                local Mag = (myRoot.Position - Part.Position).Magnitude
+                                local maxDist = _G.U_HUB_CORE.AiWalkRadius or 5000
+                                
+                                if Mag <= maxDist then
+                                    local RayParams = RaycastParams.new()
+                                    RayParams.FilterType = Enum.RaycastFilterType.Exclude
+                                    RayParams.FilterDescendantsInstances = {myChar, Camera}
+                                    local Result = workspace:Raycast(Camera.CFrame.Position, (Part.Position - Camera.CFrame.Position), RayParams)
+
+                                    local hasLoS = (Result == nil or Result.Instance:IsDescendantOf(char))
+                                    local mode = _G.U_HUB_CORE.AiTargetMode
+
+                                    local isValidTarget = false
+                                    if mode == "ล็อกโหด (ทะลุกำแพง)" then
+                                        isValidTarget = true
+                                    else
+                                        if hasLoS then isValidTarget = true end
+                                    end
+
+                                    if isValidTarget then
+                                        if Mag < shortestDist then
+                                            shortestDist = Mag
+                                            targetPart = Part
+                                            local _, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+                                            visualState = {
+                                                myHealth = humanoid.Health,
+                                                targetDistance = math.floor(Mag),
+                                                targetOnScreen = OnScreen,
+                                                hasLineOfSight = hasLoS
+                                            }
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        
                     end
                 end
             end
-        end
+        end)
     end
     return targetPart, visualState
 end
@@ -105,19 +168,32 @@ local function SetupLogoV50(MainBtn)
     for i = 1, 15 do
         local d = Instance.new("Frame", Container)
         d.Size = UDim2.new(0, 1, 0, 1); d.BackgroundColor3 = Color3.fromRGB(255, 255, 255); d.Position = UDim2.new(math.random(), 0, math.random(), 0)
-        task.spawn(function() while task.wait(math.random(2, 4)) do if not d then break end TweenService:Create(d, TweenInfo.new(1), {BackgroundTransparency = 1}):Play(); task.wait(1.2); TweenService:Create(d, TweenInfo.new(1), {BackgroundTransparency = 0.4}):Play() end end)
+        task.spawn(function() while task.wait(math.random(2, 4)) do if not d or not d.Parent then break end TweenService:Create(d, TweenInfo.new(1), {BackgroundTransparency = 1}):Play(); task.wait(1.2); TweenService:Create(d, TweenInfo.new(1), {BackgroundTransparency = 0.4}):Play() end end)
     end
     local function CreateChar(txt, color)
         local h = Instance.new("Frame", Container); h.Size = UDim2.new(1, 0, 1, 0); h.BackgroundTransparency = 1
         local l = Instance.new("TextLabel", h); l.Text = txt; l.TextColor3 = color; l.Font = Enum.Font.GothamBold; l.Size = UDim2.new(1, 0, 1, 0); l.BackgroundTransparency = 1
-        task.spawn(function() while true do if not l then break end TweenService:Create(l, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {Position = UDim2.new(0,0,0,2)}):Play(); task.wait(1.5); TweenService:Create(l, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {Position = UDim2.new(0,0,0,-2)}):Play(); task.wait(1.5) end end)
+        task.spawn(function() while true do if not l or not l.Parent then break end TweenService:Create(l, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {Position = UDim2.new(0,0,0,2)}):Play(); task.wait(1.5); TweenService:Create(l, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {Position = UDim2.new(0,0,0,-2)}):Play(); task.wait(1.5) end end)
         return h, l
     end
-    local holderU, textU = CreateChar("U", Color3.fromRGB(0, 255, 100)); local holderN, textN = CreateChar("N", Color3.fromRGB(0, 170, 255))
-    holderU.Position = UDim2.new(0,0,0,0); textU.TextSize = 35; holderN.Position = UDim2.new(-0.25,0,-0.25,0); textN.TextSize = 14
+    local holderU, textU = CreateChar("U", Color3.fromRGB(0, 255, 100))
+    local holderN, textN = CreateChar("N", Color3.fromRGB(0, 170, 255))
+    holderU.Position = UDim2.new(0,0,0,0); textU.TextSize = 35 
+    holderN.Position = UDim2.new(-0.25,0,-0.25,0); textN.TextSize = 14
+    
     return function(isMinimized)
-        if isMinimized then TweenService:Create(holderU, TweenInfo.new(0.4), {Position = UDim2.new(0,0,0,0)}):Play(); textU.TextSize = 35; TweenService:Create(holderN, TweenInfo.new(0.4), {Position = UDim2.new(-0.25,0,-0.25,0)}):Play(); textN.TextSize = 14
-        else TweenService:Create(holderN, TweenInfo.new(0.4), {Position = UDim2.new(0,0,0,0)}):Play(); textN.TextSize = 35; TweenService:Create(holderU, TweenInfo.new(0.4), {Position = UDim2.new(-0.25,0,-0.25,0)}):Play(); textU.TextSize = 14 end
+        if not holderU or not holderN or not textU or not textN then return end
+        if isMinimized then 
+            TweenService:Create(holderU, TweenInfo.new(0.4), {Position = UDim2.new(0,0,0,0)}):Play()
+            textU.TextSize = 35 
+            TweenService:Create(holderN, TweenInfo.new(0.4), {Position = UDim2.new(-0.25,0,-0.25,0)}):Play()
+            textN.TextSize = 14
+        else 
+            TweenService:Create(holderN, TweenInfo.new(0.4), {Position = UDim2.new(0,0,0,0)}):Play()
+            textN.TextSize = 35 
+            TweenService:Create(holderU, TweenInfo.new(0.4), {Position = UDim2.new(-0.25,0,-0.25,0)}):Play()
+            textU.TextSize = 14 
+        end
     end
 end
 
@@ -694,27 +770,7 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
-local AutoFarmToggleObj = Tabs.QwenAI:AddToggle("AutoFarmToggle", {
-    Title = "เปิดระบบ AI Bot", 
-    Description = "ออโต้เกิด+ฟาร์ม",
-    Default = false
-})
 
-AutoFarmToggleObj:OnChanged(function(Value) 
-    _G.U_HUB_CORE.AutoFarmEnabled = Value 
-end)
-
-
-
-Tabs.QwenAI:AddKeybind("AiKeybindToggle", {
-    Title = "ตั้งค่าปุ่มคีย์บอร์ดเปิด/ปิด AI Bot",
-    Default = "K",
-    Mode = "Toggle",
-    Callback = function(Value)
-        _G.U_HUB_CORE.AutoFarmEnabled = not _G.U_HUB_CORE.AutoFarmEnabled
-        AutoFarmToggleObj:SetValue(_G.U_HUB_CORE.AutoFarmEnabled)
-    end
-})
 
 Tabs.QwenAI:AddDropdown("AiTargetModeDrop", {
     Title = "โหมดการล็อกเป้าของ AI",
@@ -786,7 +842,7 @@ task.spawn(function()
 end)
 
 -- [[ ESP ]]
-Tabs.ESP:AddDropdown("ESP_Style", { Title = "เลือกรูปแบบ ESP", Values = {"ปิด", "Normal (เส้นขอบ)", "Hardcore (เรืองแสง)"}, Default = "ปิด", Callback = function(Value) _G.U_HUB_CORE.EspStyle = Value end })
+Tabs.ESP:AddDropdown("ESP_Style", { Title = "เลือกรูปแบบ ESP", Values = {"ปิด", "กล้อง", "กล้อง+เส้น"}, Default = "ปิด", Callback = function(Value) _G.U_HUB_CORE.EspStyle = Value end })
 Tabs.ESP:AddColorpicker("MainColor", {Title = "เปลี่ยนสี ESP", Default = Color3.fromRGB(255, 0, 0)}):OnChanged(function(Value) _G.U_HUB_CORE.SharedColor = Value end)
 Tabs.ESP:AddToggle("ShowName", {Title = "แสดงชื่อ", Default = false}):OnChanged(function(v) _G.U_HUB_CORE.ShowName = v end)
 Tabs.ESP:AddToggle("ShowDist", {Title = "แสดงระยะ", Default = false}):OnChanged(function(v) _G.U_HUB_CORE.ShowDistance = v end)
@@ -1369,8 +1425,189 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end)
     end
 end)
+-- [[ ระบบ ESP อัปเดตระบบกันเกิดใหม่ 1 วินาที (สีแดง -> สีเขียว) ]]
+local EspCache = {}
+local PlayerSpawnTimes = {}
 
+local function RemoveEsp(player)
+    if EspCache[player] then
+        if EspCache[player].Box then EspCache[player].Box:Remove() end
+        if EspCache[player].Line then EspCache[player].Line:Remove() end
+        if EspCache[player].NameText then EspCache[player].NameText:Remove() end
+        EspCache[player] = nil
+    end
+    PlayerSpawnTimes[player] = nil
+end
 
+Players.PlayerAdded:Connect(function(player)
+    PlayerSpawnTimes[player] = tick()
+end)
 
-    -- ตัวแปรจัดการสถานการณ์โดนประกบหน้าหลัง (Crossfire State)
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        PlayerSpawnTimes[player] = tick()
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    local espStyle = _G.U_HUB_CORE.EspStyle
     
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+            
+            local isWL = false
+            for _, n in pairs(_G.U_HUB_CORE.Whitelist or {}) do 
+                if n == player.Name then isWL = true; break end 
+            end
+            
+            if espStyle ~= "ปิด" and not isWL and char and humanoid and humanoid.Health > 0 and rootPart then
+                -- เช็คเวลาเกิดใหม่ (บันทึกเวลาถ้าตัวละครเพิ่งเกิด)
+                if not PlayerSpawnTimes[player] then
+                    PlayerSpawnTimes[player] = tick()
+                end
+                
+                -- เช็คว่าผ่านไป 1 วินาทีหรือยัง (เกราะกันกระสุน/เกิดใหม่)
+                local timeElapsed = tick() - PlayerSpawnTimes[player]
+                local isImmune = timeElapsed < 1.0
+                
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local mag = myRoot and (myRoot.Position - rootPart.Position).Magnitude or 0
+                
+                if mag <= _G.U_HUB_CORE.MaxEspDistance then
+                    local head = char:FindFirstChild("Head")
+                    if head then
+                        local headPos, headOnScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                        local legPos, legOnScreen = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
+                        
+                        if headOnScreen or legOnScreen then
+                            if not EspCache[player] then
+                                local box = Drawing.new("Square")
+                                box.Visible = false
+                                box.Filled = false
+                                box.Thickness = 1
+                                
+                                local line = Drawing.new("Line")
+                                line.Visible = false
+                                line.Thickness = 1
+                                
+                                local nameText = Drawing.new("Text")
+                                nameText.Visible = false
+                                nameText.Center = true
+                                nameText.Size = 13
+                                nameText.Outline = true
+                                
+                                EspCache[player] = {Box = box, Line = line, NameText = nameText}
+                            end
+                            
+                            local cache = EspCache[player]
+                            local box = cache.Box
+                            local line = cache.Line
+                            local nameText = cache.NameText
+                            
+                            local height = math.abs(headPos.Y - legPos.Y)
+                            local width = height / 2
+                            box.Size = Vector2.new(width, height)
+                            box.Position = Vector2.new(headPos.X - width / 2, headPos.Y)
+                            
+                            -- กำหนดสี: ถ้ายังไม่ครบ 1 วิ เป็น "สีแดง", ถ้าครบแล้วเป็น "สีเขียว"
+                            local targetColor = isImmune and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+                            
+                            box.Color = targetColor
+                            
+                            if espStyle == "กล้อง" then
+                                box.Visible = true
+                                line.Visible = false
+                            elseif espStyle == "กล้อง+เส้น" then
+                                box.Visible = true
+                                line.Visible = true
+                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                                line.To = Vector2.new(headPos.X, headPos.Y)
+                                line.Color = targetColor
+                            else
+                                box.Visible = false
+                                line.Visible = false
+                            end
+                            
+                            -- แสดงชื่อ ระยะทาง และสถานะยังยิงไม่ได้
+                            local infoStr = ""
+                            if isImmune then
+                                infoStr = player.Name .. " (ยังยิงไม่ได้)"
+                            else
+                                if _G.U_HUB_CORE.ShowName then
+                                    infoStr = player.Name
+                                end
+                                if _G.U_HUB_CORE.ShowDistance then
+                                    infoStr = infoStr .. (infoStr ~= "" and " " or "") .. "[" .. math.floor(mag) .. "m]"
+                                end
+                            end
+                            
+                            if infoStr ~= "" then
+                                nameText.Text = infoStr
+                                nameText.Position = Vector2.new(headPos.X, headPos.Y - 18)
+                                nameText.Color = isImmune and Color3.fromRGB(255, 100, 100) or _G.U_HUB_CORE.MyCustomTextColor
+                                nameText.Visible = true
+                            else
+                                nameText.Visible = false
+                            end
+                        else
+                            if EspCache[player] then
+                                EspCache[player].Box.Visible = false
+                                EspCache[player].Line.Visible = false
+                                EspCache[player].NameText.Visible = false
+                            end
+                        end
+                    end
+                else
+                    if EspCache[player] then
+                        EspCache[player].Box.Visible = false
+                        EspCache[player].Line.Visible = false
+                        EspCache[player].NameText.Visible = false
+                    end
+                end
+            else
+                RemoveEsp(player)
+            end
+        end
+    end
+end)
+
+-- คอยรีเซ็ตเวลาเมื่อผู้เล่นเกิดใหม่ (Humanoid เกิดใหม่หรือ Health กลับมาเต็ม)
+for _, player in pairs(Players:GetPlayers()) do
+    player.CharacterAdded:Connect(function(char)
+        PlayerSpawnTimes[player] = tick()
+        local humanoid = char:WaitForChild("Humanoid", 5)
+        if humanoid then
+            humanoid.Died:Connect(function()
+                PlayerSpawnTimes[player] = tick()
+            end)
+        end
+    end)
+    if player.Character then
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Died:Connect(function()
+                PlayerSpawnTimes[player] = tick()
+            end)
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(char)
+        PlayerSpawnTimes[player] = tick()
+        local humanoid = char:WaitForChild("Humanoid", 5)
+        if humanoid then
+            humanoid.Died:Connect(function()
+                PlayerSpawnTimes[player] = tick()
+            end)
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    RemoveEsp(player)
+end)

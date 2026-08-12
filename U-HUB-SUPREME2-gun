@@ -701,19 +701,32 @@ RunService.RenderStepped:Connect(function(dt)
     if rawDestination then
         local moveDir = (Vector3.new(rawDestination.X, root.Position.Y, rawDestination.Z) - root.Position)
         local distanceToTarget = moveDir.Magnitude
-        if distanceToTarget > 1 then
+        
+        -- ปรับแก้ให้ AI ไม่เดินเข้าหาคนแบบประชิดตัวจนเกินไป (เว้นระยะห่างประมาณ 12-15 หน่วยเพื่อตั้งหลักยิง)
+        local stoppingDistance = 14
+        if distanceToTarget > stoppingDistance then
             moveDir = moveDir.Unit
             
             local wallParams = RaycastParams.new()
             wallParams.FilterType = Enum.RaycastFilterType.Exclude
             wallParams.FilterDescendantsInstances = {character, Camera}
             
-            local wallCheck = workspace:Raycast(root.Position, moveDir * 6, wallParams)
-            if wallCheck then
+            -- ขยายระยะตรวจจับสิ่งกีดขวางรอบตัวเพื่อป้องกันการเดินชนของและติดกำแพง
+            local wallCheck = workspace:Raycast(root.Position, moveDir * 10, wallParams)
+            local leftCheck = workspace:Raycast(root.Position, (CFrame.Angles(0, math.rad(-45), 0) * moveDir) * 8, wallParams)
+            local rightCheck = workspace:Raycast(root.Position, (CFrame.Angles(0, math.rad(45), 0) * moveDir) * 8, wallParams)
+
+            if wallCheck or leftCheck or rightCheck then
                 local perpendicular = Vector3.new(-moveDir.Z, 0, moveDir.X) * AvoidSideOffsetSafe
-                finalDestination = root.Position + (moveDir * 3) + (perpendicular * 10)
+                finalDestination = root.Position + (perpendicular * 14) + (moveDir * 2)
                 humanoid.Jump = true
+            else
+                finalDestination = root.Position + (moveDir * (distanceToTarget - stoppingDistance))
             end
+        else
+            -- ถ้าอยู่ในระยะยิงแล้ว ให้ยืนคุมเชิงหรือขยับถอย/สเต็ปข้างเล็กน้อย ไม่เดินพุ่งชนตรงๆ
+            local strafeOffset = Vector3.new(-moveDir.Z, 0, moveDir.X) * (math.sin(tick() * 5) * 8)
+            finalDestination = root.Position + strafeOffset
         end
         humanoid:MoveTo(finalDestination)
     end
@@ -1379,12 +1392,13 @@ RunService.RenderStepped:Connect(function(dt)
         moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
         
         if moveDir.Magnitude > 0.1 then
+            local distToDest = moveDir.Magnitude
             moveDir = moveDir.Unit
             local rayParams = RaycastParams.new()
             rayParams.FilterType = Enum.RaycastFilterType.Exclude
             rayParams.FilterDescendantsInstances = {myChar, Camera}
 
-            local checkDist = 8
+            local checkDist = 10
             local hitCenter = workspace:Raycast(myRoot.Position, moveDir * checkDist, rayParams)
             local leftDir = CFrame.Angles(0, math.rad(-55), 0) * moveDir
             local hitLeft = workspace:Raycast(myRoot.Position, leftDir * checkDist, rayParams)
@@ -1400,6 +1414,11 @@ RunService.RenderStepped:Connect(function(dt)
                 else
                     moveDir = -moveDir
                 end
+            end
+
+            -- เว้นระยะห่างเป้าหมายประมาณ 14 หน่วยเพื่อไม่ให้เดินชนตัวคนแบบตรงๆ
+            if distToDest < 14 and LockTarget then
+                moveDir = Vector3.new(-moveDir.Z, 0, moveDir.X) * (math.sin(tick() * 4))
             end
 
             SmoothVelocity = SmoothVelocity:Lerp(moveDir * humanoid.WalkSpeed, 0.22)
